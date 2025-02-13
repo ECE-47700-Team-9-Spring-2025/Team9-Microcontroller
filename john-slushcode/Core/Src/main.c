@@ -143,10 +143,7 @@ int main(void)
 
 		// Print the distance using UART
 		printToConsole("Distance (Sensor 1): %lu mm\r\n", sr04.distance); // @suppress("Float formatting support")
-
-    char msg[50];
-		sprintf(msg, "Distance (Sensor 2): %lu mm\r\n", sr04_tim4.distance); // @suppress("Float formatting support")
-		HAL_UART_Transmit(&huart2, (uint8_t *)msg, strlen(msg), HAL_MAX_DELAY);
+		printToConsole("Distance (Sensor 2): %lu mm\r\n", sr04_tim4.distance); // @suppress("Float formatting support")
 
     // Wait for 500ms before triggering again
     HAL_Delay(500);
