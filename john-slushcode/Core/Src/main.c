@@ -22,6 +22,9 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "sr04.h"
+#include <stdio.h>
+#include <stdarg.h>
+#include <string.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -46,6 +49,7 @@ TIM_HandleTypeDef htim1;
 TIM_HandleTypeDef htim4;
 
 UART_HandleTypeDef huart2;
+UART_HandleTypeDef huart6;
 
 /* USER CODE BEGIN PV */
 sr04_t sr04;
@@ -60,13 +64,22 @@ static void MX_USART2_UART_Init(void);
 static void MX_RTC_Init(void);
 static void MX_TIM1_Init(void);
 static void MX_TIM4_Init(void);
+static void MX_USART6_UART_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-
+void printToConsole(const char *format, ...) {
+    char buffer[100]; // Adjust the buffer size as needed.
+    va_list args;
+    va_start(args, format);
+    vsnprintf(buffer, sizeof(buffer), format, args);
+    va_end(args);
+    
+    HAL_UART_Transmit(&huart2, (uint8_t *)buffer, strlen(buffer), HAL_MAX_DELAY);
+}
 /* USER CODE END 0 */
 
 /**
@@ -102,6 +115,7 @@ int main(void)
   MX_RTC_Init();
   MX_TIM1_Init();
   MX_TIM4_Init();
+  MX_USART6_UART_Init();
   /* USER CODE BEGIN 2 */
   sr04.trig_port = GPIOA;
   sr04.trig_pin = GPIO_PIN_9;
@@ -124,18 +138,18 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-	    sr04_trigger(&sr04);
-	    sr04_trigger(&sr04_tim4);
-	    HAL_Delay(100);
+    sr04_trigger(&sr04);
+    sr04_trigger(&sr04_tim4);
 
 		// Print the distance using UART
-		char msg[50];
-		sprintf(msg, "Distance (Sensor 1): %lu mm\r\n", sr04.distance); // @suppress("Float formatting support")
-		HAL_UART_Transmit(&huart2, (uint8_t *)msg, strlen(msg), HAL_MAX_DELAY);
+		printToConsole("Distance (Sensor 1): %lu mm\r\n", sr04.distance); // @suppress("Float formatting support")
 
-		msg[50];
+    char msg[50];
 		sprintf(msg, "Distance (Sensor 2): %lu mm\r\n", sr04_tim4.distance); // @suppress("Float formatting support")
 		HAL_UART_Transmit(&huart2, (uint8_t *)msg, strlen(msg), HAL_MAX_DELAY);
+
+    // Wait for 500ms before triggering again
+    HAL_Delay(500);
   }
   /* USER CODE END 3 */
 }
@@ -369,6 +383,39 @@ static void MX_USART2_UART_Init(void)
   /* USER CODE BEGIN USART2_Init 2 */
 
   /* USER CODE END USART2_Init 2 */
+
+}
+
+/**
+  * @brief USART6 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_USART6_UART_Init(void)
+{
+
+  /* USER CODE BEGIN USART6_Init 0 */
+
+  /* USER CODE END USART6_Init 0 */
+
+  /* USER CODE BEGIN USART6_Init 1 */
+
+  /* USER CODE END USART6_Init 1 */
+  huart6.Instance = USART6;
+  huart6.Init.BaudRate = 9600;
+  huart6.Init.WordLength = UART_WORDLENGTH_8B;
+  huart6.Init.StopBits = UART_STOPBITS_1;
+  huart6.Init.Parity = UART_PARITY_NONE;
+  huart6.Init.Mode = UART_MODE_TX_RX;
+  huart6.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+  huart6.Init.OverSampling = UART_OVERSAMPLING_16;
+  if (HAL_UART_Init(&huart6) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN USART6_Init 2 */
+
+  /* USER CODE END USART6_Init 2 */
 
 }
 
