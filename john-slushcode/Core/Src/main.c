@@ -80,6 +80,104 @@ void printToConsole(const char *format, ...) {
     
     HAL_UART_Transmit(&huart2, (uint8_t *)buffer, strlen(buffer), HAL_MAX_DELAY);
 }
+
+void decodeNMEASentence(const char *sentence) {
+    char buffer[128];
+    strncpy(buffer, sentence, sizeof(buffer));
+    buffer[sizeof(buffer)-1] = '\0';
+    
+    char *token = strtok(buffer, ",");
+    int fieldIndex = 0;
+    
+    while (token != NULL) {
+        printToConsole("Field %d: %s\r\n", fieldIndex, token);
+        token = strtok(NULL, ",");
+        fieldIndex++;
+    }
+}
+
+void decodeRMC(const char *sentence) {
+    char buffer[128];
+    strncpy(buffer, sentence, sizeof(buffer));
+    buffer[sizeof(buffer) - 1] = '\0';
+
+    // RMC sentences usually have about ~12 fields (depending on configuration)
+    char *tokens[15] = {0};
+    int tokenCount = 0;
+
+    char *token = strtok(buffer, ",");
+    while(token != NULL && tokenCount < 15) {
+        tokens[tokenCount++] = token;
+        token = strtok(NULL, ",");
+    }
+
+    // Print the RMC sentence details in a readable format.
+    // Note: Adjust based on your module's actual output, as some fields might be missing.
+    printToConsole("----- GPS RMC Sentence -----\r\n");
+    if(tokenCount > 0) {
+        // Field 0 contains the sentence identifier.
+        printToConsole("Sentence Identifier: %s\r\n", tokens[0]);
+    }
+    if(tokenCount > 1) {
+        printToConsole("UTC Time: %s\r\n", tokens[1]);
+    }
+    if(tokenCount > 2) {
+        printToConsole("Status: %s\r\n", tokens[2]);
+    }
+    if(tokenCount > 3 && tokenCount > 4) {
+        printToConsole("Latitude: %s %s\r\n", tokens[3], tokens[4]);
+    }
+    if(tokenCount > 5 && tokenCount > 6) {
+        printToConsole("Longitude: %s %s\r\n", tokens[5], tokens[6]);
+    }
+    if(tokenCount > 7) {
+        printToConsole("Speed (knots): %s\r\n", tokens[7]);
+    }
+    if(tokenCount > 8) {
+        printToConsole("Course over ground: %s\r\n", tokens[8]);
+    }
+    if(tokenCount > 9) {
+        printToConsole("Date: %s\r\n", tokens[9]);
+    }
+    if(tokenCount > 10) {
+        // Magnetic Variation might be empty
+        printToConsole("Magnetic Variation: %s\r\n", tokens[10]);
+    }
+    printToConsole("-----------------------------\r\n");
+}
+
+void printCurrentGpsOutput(void) {
+    char buffer[128];
+    uint32_t idx = 0;
+    char ch;
+
+    // Clear the buffer
+    memset(buffer, 0, sizeof(buffer));
+
+    // Continuously try to read until we catch a full sentence
+    while (idx < (sizeof(buffer) - 1)) {
+        if (HAL_UART_Receive(&huart6, (uint8_t *)&ch, 1, 1000) == HAL_OK) {
+            buffer[idx++] = ch;
+            // Check for newline termination
+            if (ch == '\n') {
+                break;
+            }
+        }
+    }
+
+    if (idx > 0) {
+        printToConsole("GPS: Returned data!\r\n");
+        // Check the identifier to decide how to decode
+        if(strncmp(buffer, "$GNRMC", 6) == 0 || strncmp(buffer, "$$GNRMC", 7) == 0) {
+            decodeRMC(buffer);
+        } else {
+            // Fallback generic tokenization
+            decodeNMEASentence(buffer);
+        }
+    } else {
+        printToConsole("GPS: No data\r\n");
+    }
+}
 /* USER CODE END 0 */
 
 /**
@@ -129,6 +227,11 @@ int main(void)
   sr04_tim4.echo_htim = &htim4;
   sr04_tim4.echo_channel = TIM_CHANNEL_4;
   sr04_init(&sr04_tim4);
+
+  // Print that we have to wait 30 seconds before starting for gps to calibrate
+  printToConsole("Waiting for GPS to calibrate...\r\n");
+  HAL_Delay(30000);
+  printToConsole("GPS calibrated\r\n");
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -138,15 +241,20 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+    printToConsole("--------------------------------\r\n\n");
+
     sr04_trigger(&sr04);
     sr04_trigger(&sr04_tim4);
 
-		// Print the distance using UART
-		printToConsole("Distance (Sensor 1): %lu mm\r\n", sr04.distance); // @suppress("Float formatting support")
-		printToConsole("Distance (Sensor 2): %lu mm\r\n", sr04_tim4.distance); // @suppress("Float formatting support")
+    // Print the distance using UART
+    printToConsole("Distance (Sensor 1): %lu mm\r\n", sr04.distance); // @suppress("Float formatting support")
+    printToConsole("Distance (Sensor 2): %lu mm\r\n", sr04_tim4.distance); // @suppress("Float formatting support")
+    
+    // Print the GPS output from usart 6
+    printCurrentGpsOutput();
 
     // Wait for 500ms before triggering again
-    HAL_Delay(500);
+    HAL_Delay(100);
   }
   /* USER CODE END 3 */
 }
