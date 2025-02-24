@@ -35,55 +35,99 @@ static bool ParseDate(const char* date_str, GPS_Data* data) {
     return true;
 }
 
-bool M8Q_ParseGPRMC(const char* sentence, GPS_Data* data) {
-    char buffer[128];
-    char* tokens[15] = {0};
-    int token_count = 0;
+bool M8Q_ParseGNRMC(const char* sentence, GPS_Data* data) {
+    char *saveptr;
+    char *token = strtok_r((char*)sentence, ",", &saveptr);
+    int field = 0;
     
-    strncpy(buffer, sentence, sizeof(buffer)-1);
-    buffer[sizeof(buffer)-1] = '\0';
-    
-    // Split sentence into tokens
-    char* token = strtok(buffer, ",");
-    while (token && token_count < 15) {
-        tokens[token_count++] = token;
+    while (token != NULL) {
+        switch(field) {
+            case 1: // Time
+                if (strlen(token) >= 6) {
+                    char time[3] = {0};
+                    // Hours
+                    strncpy(time, token, 2);
+                    data->hours = atoi(time);
+                    // Minutes
+                    strncpy(time, token + 2, 2);
+                    data->minutes = atoi(time);
+                    // Seconds
+                    strncpy(time, token + 4, 2);
+                    data->seconds = atoi(time);
+                }
+                break;
+                
+            case 2: // Status
+                data->fix_valid = (token[0] == 'A');
+                break;
+                
+            case 3: // Latitude
+                if (strlen(token) > 0) {
+                    data->latitude = atof(token);
+                }
+                break;
+                
+            case 4: // N/S
+                data->lat_direction = token[0];
+                break;
+                
+            case 5: // Longitude
+                if (strlen(token) > 0) {
+                    data->longitude = atof(token);
+                }
+                break;
+                
+            case 6: // E/W
+                data->lon_direction = token[0];
+                break;
+                
+            case 7: // Speed
+                if (strlen(token) > 0) {
+                    data->speed_knots = atof(token);
+                }
+                break;
+                
+            case 8: // Course
+                if (strlen(token) > 0) {
+                    data->course = atof(token);
+                }
+                break;
+                
+            case 9: // Date
+                if (strlen(token) >= 6) {
+                    char date[3] = {0};
+                    // Day
+                    strncpy(date, token, 2);
+                    data->day = atoi(date);
+                    // Month
+                    strncpy(date, token + 2, 2);
+                    data->month = atoi(date);
+                    // Year
+                    strncpy(date, token + 4, 2);
+                    data->year = 2000 + atoi(date);
+                }
+                break;
+        }
+        token = strtok_r(NULL, ",", &saveptr);
+        field++;
     }
     
-    // Verify it's an RMC sentence
-    if (token_count < 12 || strncmp(tokens[0], "$GPRMC", 6) != 0) {
-        return false;
+    // Convert DDMM.MMMMM to decimal degrees
+    if (data->fix_valid) {
+        double lat_degrees = floor(data->latitude / 100);
+        double lat_minutes = data->latitude - (lat_degrees * 100);
+        data->latitude = lat_degrees + (lat_minutes / 60);
+        
+        double lon_degrees = floor(data->longitude / 100);
+        double lon_minutes = data->longitude - (lon_degrees * 100);
+        data->longitude = lon_degrees + (lon_minutes / 60);
+        
+        // Apply direction
+        if (data->lat_direction == 'S') data->latitude = -data->latitude;
+        if (data->lon_direction == 'W') data->longitude = -data->longitude;
+        
+        return true;
     }
     
-    // Parse time
-    ParseTime(tokens[1], data);
-    
-    // Parse status
-    data->fix_valid = (tokens[2][0] == 'A');
-    
-    // Parse latitude
-    if (strlen(tokens[3]) > 0 && strlen(tokens[4]) > 0) {
-        data->latitude = ParseLatLong(tokens[3], tokens[4][0]);
-        data->lat_direction = tokens[4][0];
-    }
-    
-    // Parse longitude
-    if (strlen(tokens[5]) > 0 && strlen(tokens[6]) > 0) {
-        data->longitude = ParseLatLong(tokens[5], tokens[6][0]);
-        data->lon_direction = tokens[6][0];
-    }
-    
-    // Parse speed
-    if (strlen(tokens[7]) > 0) {
-        data->speed_knots = atof(tokens[7]);
-    }
-    
-    // Parse course
-    if (strlen(tokens[8]) > 0) {
-        data->course = atof(tokens[8]);
-    }
-    
-    // Parse date
-    ParseDate(tokens[9], data);
-    
-    return true;
+    return false;
 }

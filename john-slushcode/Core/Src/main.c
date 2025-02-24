@@ -150,114 +150,121 @@ GPS_Status parseGPSTXT(const char* message) {
 bool printCurrentGpsOutput(void) {
     char buffer[256];
     static GPS_Status lastStatus = GPS_STATUS_INIT;
+    static uint32_t noFixCount = 0;
+    static uint32_t lastDebugPrint = 0;
+    const uint32_t DEBUG_PRINT_INTERVAL = 1000; // Print debug every 1 second
     
     memset(buffer, 0, sizeof(buffer));
     memset(&gps_data, 0, sizeof(GPS_Data));
 
     if (readUntilNewline(buffer, sizeof(buffer))) {
-        printToConsole("Raw GPS: %s", buffer);
-
-        // Validate NMEA message format
-        if (strlen(buffer) < 6 || buffer[0] != '$') {
-            printToConsole("Invalid NMEA format\r\n");
-            return false;
+        // Debug message with timestamp
+        uint32_t currentTick = HAL_GetTick();
+        if (currentTick - lastDebugPrint >= DEBUG_PRINT_INTERVAL) {
+            printToConsole("\r\n=== GPS Debug [%lu ms] ===\r\n", currentTick);
+            lastDebugPrint = currentTick;
         }
 
-        if (strstr(buffer, "$GPRMC") || strstr(buffer, "$GNRMC")) {
-            if (M8Q_ParseGPRMC(buffer, &gps_data)) {
-                printToConsole("\r\n----- GPS Data -----\r\n");
-                
-                // Print time
-                printToConsole("Time: %02d:%02d:%02d\r\n", 
-                    gps_data.hours, 
-                    gps_data.minutes, 
-                    gps_data.seconds);
-                
-                // Print date
-                printToConsole("Date: %02d/%02d/%04d\r\n", 
-                    gps_data.day, 
-                    gps_data.month, 
-                    gps_data.year);
-                
-                // Print position if fix is valid
-                if (gps_data.fix_valid) {
-                    printToConsole("Position: %.6f %c, %.6f %c\r\n",
-                        gps_data.latitude, gps_data.lat_direction,
-                        gps_data.longitude, gps_data.lon_direction);
-                        
-                    printToConsole("Speed: %.1f knots\r\n", 
-                        gps_data.speed_knots);
-                        
-                    printToConsole("Course: %.1f degrees\r\n", 
-                        gps_data.course);
+        // Validate NMEA message format
+        if (buffer[0] != '$') {
+            printToConsole("ERROR: Invalid NMEA format\r\n");
+            return false;
+        }
+        
+        const char* buffer = "$GNRMC,201850.00,A,4025.69979,N,08654.69118,W,0.256,,240225,08654.69118,W,0.256,,240225,,,A*73";
+        
+        // Parse message type
+        if (strstr(buffer, "$GNRMC")) {
+            printToConsole("Message Type: RMC (Position/Speed/Time)\r\n");
+            
+            if (M8Q_ParseGNRMC(buffer, &gps_data)) {
+                if (!gps_data.fix_valid) {
+                    noFixCount++;
+                    printToConsole("Status: NO FIX (Waiting: %lu sec)\r\n", noFixCount);
+                    printToConsole("Time: %02d:%02d:%02d UTC\r\n", 
+                        gps_data.hours, 
+                        gps_data.minutes, 
+                        gps_data.seconds);
+                    printToConsole("Troubleshooting:\r\n");
+                    printToConsole("- Ensure clear view of sky\r\n");
+                    printToConsole("- Wait for satellite acquisition (can take 1-5 min)\r\n");
+                    printToConsole("- Check antenna connection\r\n");
                 } else {
-                    printToConsole("Position: No Fix\r\n");
+                    noFixCount = 0;
+                    printToConsole("\r\n=== GPS Location Update ===\r\n");
+                    printToConsole("Time: %02d:%02d:%02d UTC\r\n", 
+                        gps_data.hours, 
+                        gps_data.minutes, 
+                        gps_data.seconds);
+                    
+                    printToConsole("Date: %02d/%02d/%04d\r\n", 
+                        gps_data.day, 
+                        gps_data.month, 
+                        gps_data.year);
+                    
+                    // Convert coordinates to degrees and decimal minutes format
+                    int lat_deg = (int)gps_data.latitude;
+                    double lat_min = (gps_data.latitude - lat_deg) * 60;
+                    int lon_deg = (int)gps_data.longitude;
+                    double lon_min = (gps_data.longitude - lon_deg) * 60;
+                    
+                    printToConsole("Position:\r\n");
+                    printToConsole("  %d°%.4f' %c\r\n", 
+                        abs(lat_deg), fabs(lat_min), gps_data.lat_direction);
+                    printToConsole("  %d°%.4f' %c\r\n", 
+                        abs(lon_deg), fabs(lon_min), gps_data.lon_direction);
+                    
+                    if (gps_data.speed_knots > 0.5) { // Only show speed if moving
+                        printToConsole("Speed: %.1f km/h\r\n", 
+                            gps_data.speed_knots * 1.852); // Convert knots to km/h
+                        printToConsole("Heading: %.1f°\r\n", 
+                            gps_data.course);
+                    }
+                    
+                    printToConsole("=========================\r\n");
                 }
-                
-                printToConsole("-------------------\r\n");
+            } else {
+                printToConsole("ERROR: Failed to parse RMC message\r\n");
+                printToConsole("Raw: %s\r\n", buffer);
             }
             return true;
         } 
-        else if (strstr(buffer, "$GPGGA") || strstr(buffer, "$GNGGA")) {
-            printToConsole("Parsing GGA message: %s", buffer);
+        else if (strstr(buffer, "$GNGGA")) {
+            printToConsole("Message Type: GGA (GPS Fix Data)\r\n");
             
-            // Create temporary variables for parsing
+            // Parse GGA message fields
             char *saveptr;
             char *token = strtok_r(buffer, ",", &saveptr);
             int field = 0;
-            double latitude = 0.0, longitude = 0.0, altitude = 0.0;  // Changed to double
-            char lat_dir = 0, lon_dir = 0;
             
-            // Use strtok_r for safer tokenization
             while (token != NULL) {
-                printToConsole("Field %d: %s\r\n", field, token);  // Debug print
-                
                 switch(field) {
-                    case 2: // Latitude
-                        latitude = atof(token);  // Changed to atof
-                        printToConsole("Raw latitude: %.4f\r\n", latitude);
+                    case 6: // Fix quality
+                        printToConsole("Fix Quality: ");
+                        switch(atoi(token)) {
+                            case 0: printToConsole("Invalid\r\n"); break;
+                            case 1: printToConsole("GPS Fix\r\n"); break;
+                            case 2: printToConsole("DGPS Fix\r\n"); break;
+                            default: printToConsole("Unknown (%s)\r\n", token); break;
+                        }
                         break;
-                    case 3: // N/S indicator
-                        lat_dir = token[0];
+                    case 7: // Satellites in use
+                        printToConsole("Satellites: %s in use\r\n", token);
                         break;
-                    case 4: // Longitude
-                        longitude = atof(token);  // Changed to atof
-                        printToConsole("Raw longitude: %.4f\r\n", longitude);
-                        break;
-                    case 5: // E/W indicator
-                        lon_dir = token[0];
-                        break;
-                    case 9: // Altitude
-                        altitude = atof(token);  // Changed to atof
-                        printToConsole("Raw altitude: %.1f\r\n", altitude);
+                    case 8: // HDOP
+                        {
+                            float hdop = atof(token);
+                            printToConsole("HDOP: %.1f ", hdop);
+                            if (hdop < 1.0) printToConsole("(Excellent)\r\n");
+                            else if (hdop < 2.0) printToConsole("(Good)\r\n");
+                            else if (hdop < 5.0) printToConsole("(Moderate)\r\n");
+                            else printToConsole("(Poor)\r\n");
+                        }
                         break;
                 }
                 field++;
                 token = strtok_r(NULL, ",", &saveptr);
             }
-            
-            // Convert DDMM.MMMM to decimal degrees
-            if (latitude != 0.0) {  // Only convert if we got a valid number
-                double lat_degrees = (int)(latitude / 100);
-                double lat_minutes = latitude - (lat_degrees * 100);
-                latitude = lat_degrees + (lat_minutes / 60);
-                if (lat_dir == 'S') latitude = -latitude;
-                printToConsole("Converted latitude: %.6f\r\n", latitude);
-            }
-            
-            if (longitude != 0.0) {  // Only convert if we got a valid number
-                double lon_degrees = (int)(longitude / 100);
-                double lon_minutes = longitude - (lon_degrees * 100);
-                longitude = lon_degrees + (lon_minutes / 60);
-                if (lon_dir == 'W') longitude = -longitude;
-                printToConsole("Converted longitude: %.6f\r\n", longitude);
-            }
-            
-            printToConsole("\r\n----- GGA Data -----\r\n");
-            printToConsole("Latitude: %.6f° %c\r\n", latitude, lat_dir);
-            printToConsole("Longitude: %.6f° %c\r\n", longitude, lon_dir);
-            printToConsole("Altitude: %.1f m\r\n", altitude);
-            printToConsole("-------------------\r\n");
             return true;
         }
         else if (strstr(buffer, "$GNTXT")) {
@@ -282,11 +289,11 @@ bool printCurrentGpsOutput(void) {
             return true;
         }
         else {
-            decodeNMEASentence(buffer);
+            printToConsole("Message Type: Other (%.*s)\r\n", 5, buffer);
             return true;
         }
     } else {
-        printToConsole("Failed to read complete NMEA sentence\r\n");
+        printToConsole("ERROR: Failed to read NMEA sentence\r\n");
         return false;
     }
 }
@@ -297,6 +304,7 @@ void sendUBXCommand(const char* cmd, size_t len) {
 }
 
 void initGPS(void) {
+  return; 
     printToConsole("Initializing GPS...\r\n");
     
     // First, flush any pending data
