@@ -22,11 +22,20 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "sr04.h"
+#include "m8q.h"
+#include <stdio.h>
+#include <stdarg.h>
+#include <string.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
-
+typedef enum {
+    GPS_STATUS_INIT,
+    GPS_STATUS_OK,
+    GPS_STATUS_ERROR,
+    GPS_STATUS_NO_FIX
+} GPS_Status;
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
@@ -46,11 +55,12 @@ TIM_HandleTypeDef htim1;
 TIM_HandleTypeDef htim4;
 
 UART_HandleTypeDef huart2;
+UART_HandleTypeDef huart6;
 
 /* USER CODE BEGIN PV */
 sr04_t sr04;
 sr04_t sr04_tim4;
-
+GPS_Data gps_data;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -60,13 +70,295 @@ static void MX_USART2_UART_Init(void);
 static void MX_RTC_Init(void);
 static void MX_TIM1_Init(void);
 static void MX_TIM4_Init(void);
+static void MX_USART6_UART_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+void printToConsole(const char *format, ...) {
+    char buffer[256];
+    va_list args;
+    va_start(args, format);
+    vsnprintf(buffer, sizeof(buffer), format, args);
+    va_end(args);
+    
+    HAL_UART_Transmit(&huart2, (uint8_t *)buffer, strlen(buffer), HAL_MAX_DELAY);
+}
 
+void decodeNMEASentence(const char *sentence) {
+    char buffer[128];
+    strncpy(buffer, sentence, sizeof(buffer));
+    buffer[sizeof(buffer)-1] = '\0';
+    
+    char *token = strtok(buffer, ",");
+    int fieldIndex = 0;
+    
+    while (token != NULL) {
+        printToConsole("Field %d: %s\r\n", fieldIndex, token);
+        token = strtok(NULL, ",");
+        fieldIndex++;
+    }
+}
+
+bool readUntilNewline(char *buffer, size_t maxSize) {
+    uint32_t startTick = HAL_GetTick();
+    uint32_t idx = 0;
+    char ch;
+    bool startFound = false;
+    
+    while (idx < (maxSize - 1)) {
+        if ((HAL_GetTick() - startTick) > 2000) {
+            printToConsole("Timeout after %lu ms\r\n", (HAL_GetTick() - startTick));
+            break;
+        }
+        
+        HAL_StatusTypeDef status = HAL_UART_Receive(&huart6, (uint8_t*)&ch, 1, 100);
+        if (status == HAL_OK) {
+            if (ch == '$') {
+                startFound = true;
+                idx = 0;
+            }
+            
+            if (startFound) {
+                buffer[idx++] = ch;
+                if (ch == '\n' && idx > 1 && buffer[idx-2] == '\r') {
+                    buffer[idx] = '\0';
+                    return true;
+                }
+            }
+        }
+    }
+    
+    buffer[idx] = '\0';
+    return false;
+}
+
+GPS_Status parseGPSTXT(const char* message) {
+    if (strstr(message, "ANTSTATUS=INIT")) {
+        return GPS_STATUS_INIT;
+    } else if (strstr(message, "ANTSTATUS=OK")) {
+        return GPS_STATUS_OK;
+    } else if (strstr(message, "ANTSTATUS=SHORT") || 
+               strstr(message, "ANTSTATUS=OPEN")) {
+        return GPS_STATUS_ERROR;
+    }
+    return GPS_STATUS_NO_FIX;
+}
+
+bool printCurrentGpsOutput(void) {
+    char buffer[256];
+    static GPS_Status lastStatus = GPS_STATUS_INIT;
+    static uint32_t noFixCount = 0;
+    static uint32_t lastDebugPrint = 0;
+    const uint32_t DEBUG_PRINT_INTERVAL = 1000; // Print debug every 1 second
+    
+    memset(buffer, 0, sizeof(buffer));
+    memset(&gps_data, 0, sizeof(GPS_Data));
+
+    if (readUntilNewline(buffer, sizeof(buffer))) {
+        // Debug message with timestamp
+        uint32_t currentTick = HAL_GetTick();
+        if (currentTick - lastDebugPrint >= DEBUG_PRINT_INTERVAL) {
+            printToConsole("\r\n=== GPS Debug [%lu ms] ===\r\n", currentTick);
+            lastDebugPrint = currentTick;
+        }
+
+        // Validate NMEA message format
+        if (buffer[0] != '$') {
+            printToConsole("ERROR: Invalid NMEA format\r\n");
+            return false;
+        }
+        
+        const char* buffer = "$GNRMC,201850.00,A,4025.69979,N,08654.69118,W,0.256,,240225,08654.69118,W,0.256,,240225,,,A*73";
+        
+        // Parse message type
+        if (strstr(buffer, "$GNRMC")) {
+            printToConsole("Message Type: RMC (Position/Speed/Time)\r\n");
+            
+            if (M8Q_ParseGNRMC(buffer, &gps_data)) {
+                if (!gps_data.fix_valid) {
+                    noFixCount++;
+                    printToConsole("Status: NO FIX (Waiting: %lu sec)\r\n", noFixCount);
+                    printToConsole("Time: %02d:%02d:%02d UTC\r\n", 
+                        gps_data.hours, 
+                        gps_data.minutes, 
+                        gps_data.seconds);
+                    printToConsole("Troubleshooting:\r\n");
+                    printToConsole("- Ensure clear view of sky\r\n");
+                    printToConsole("- Wait for satellite acquisition (can take 1-5 min)\r\n");
+                    printToConsole("- Check antenna connection\r\n");
+                } else {
+                    noFixCount = 0;
+                    printToConsole("\r\n=== GPS Location Update ===\r\n");
+                    printToConsole("Time: %02d:%02d:%02d UTC\r\n", 
+                        gps_data.hours, 
+                        gps_data.minutes, 
+                        gps_data.seconds);
+                    
+                    printToConsole("Date: %02d/%02d/%04d\r\n", 
+                        gps_data.day, 
+                        gps_data.month, 
+                        gps_data.year);
+                    
+                    // Convert coordinates to degrees and decimal minutes format
+                    int lat_deg = (int)gps_data.latitude;
+                    double lat_min = (gps_data.latitude - lat_deg) * 60;
+                    int lon_deg = (int)gps_data.longitude;
+                    double lon_min = (gps_data.longitude - lon_deg) * 60;
+                    
+                    printToConsole("Position:\r\n");
+                    printToConsole("  %d°%.4f' %c\r\n", 
+                        abs(lat_deg), fabs(lat_min), gps_data.lat_direction);
+                    printToConsole("  %d°%.4f' %c\r\n", 
+                        abs(lon_deg), fabs(lon_min), gps_data.lon_direction);
+                    
+                    if (gps_data.speed_knots > 0.5) { // Only show speed if moving
+                        printToConsole("Speed: %.1f km/h\r\n", 
+                            gps_data.speed_knots * 1.852); // Convert knots to km/h
+                        printToConsole("Heading: %.1f°\r\n", 
+                            gps_data.course);
+                    }
+                    
+                    printToConsole("=========================\r\n");
+                }
+            } else {
+                printToConsole("ERROR: Failed to parse RMC message\r\n");
+                printToConsole("Raw: %s\r\n", buffer);
+            }
+            return true;
+        } 
+        else if (strstr(buffer, "$GNGGA")) {
+            printToConsole("Message Type: GGA (GPS Fix Data)\r\n");
+            
+            // Parse GGA message fields
+            char *saveptr;
+            char *token = strtok_r(buffer, ",", &saveptr);
+            int field = 0;
+            
+            while (token != NULL) {
+                switch(field) {
+                    case 6: // Fix quality
+                        printToConsole("Fix Quality: ");
+                        switch(atoi(token)) {
+                            case 0: printToConsole("Invalid\r\n"); break;
+                            case 1: printToConsole("GPS Fix\r\n"); break;
+                            case 2: printToConsole("DGPS Fix\r\n"); break;
+                            default: printToConsole("Unknown (%s)\r\n", token); break;
+                        }
+                        break;
+                    case 7: // Satellites in use
+                        printToConsole("Satellites: %s in use\r\n", token);
+                        break;
+                    case 8: // HDOP
+                        {
+                            float hdop = atof(token);
+                            printToConsole("HDOP: %.1f ", hdop);
+                            if (hdop < 1.0) printToConsole("(Excellent)\r\n");
+                            else if (hdop < 2.0) printToConsole("(Good)\r\n");
+                            else if (hdop < 5.0) printToConsole("(Moderate)\r\n");
+                            else printToConsole("(Poor)\r\n");
+                        }
+                        break;
+                }
+                field++;
+                token = strtok_r(NULL, ",", &saveptr);
+            }
+            return true;
+        }
+        else if (strstr(buffer, "$GNTXT")) {
+            GPS_Status status = parseGPSTXT(buffer);
+            if (status != lastStatus) {
+                switch(status) {
+                    case GPS_STATUS_INIT:
+                        printToConsole("GPS Status: Initializing antenna\r\n");
+                        break;
+                    case GPS_STATUS_OK:
+                        printToConsole("GPS Status: Antenna OK, waiting for fix\r\n");
+                        break;
+                    case GPS_STATUS_ERROR:
+                        printToConsole("GPS Status: Antenna error detected!\r\n");
+                        break;
+                    default:
+                        break;
+                }
+                lastStatus = status;
+            }
+            printToConsole("GPS Info Message: %s", buffer);
+            return true;
+        }
+        else {
+            printToConsole("Message Type: Other (%.*s)\r\n", 5, buffer);
+            return true;
+        }
+    } else {
+        printToConsole("ERROR: Failed to read NMEA sentence\r\n");
+        return false;
+    }
+}
+
+void sendUBXCommand(const char* cmd, size_t len) {
+    HAL_UART_Transmit(&huart6, (uint8_t*)cmd, len, 1000);
+    HAL_Delay(100); // Wait for command to process
+}
+
+void initGPS(void) {
+  return; 
+    printToConsole("Initializing GPS...\r\n");
+    
+    // First, flush any pending data
+    HAL_Delay(100);
+    uint8_t dummy;
+    int flushed = 0;
+    while (HAL_UART_Receive(&huart6, &dummy, 1, 1) == HAL_OK) {
+        flushed++;
+    }
+    printToConsole("Flushed %d bytes\r\n", flushed);
+    
+    // Reset to factory defaults
+    const char reset[] = "$PUBX,41,1,0007,0003,9600,0*10\r\n";
+    sendUBXCommand(reset, strlen(reset));
+    HAL_Delay(1000);
+    
+    // Try to read any response
+    char buffer[128];
+    if (readUntilNewline(buffer, sizeof(buffer))) {
+        printToConsole("Reset response: %s\r\n", buffer);
+    } else {
+        printToConsole("No response to reset command\r\n");
+    }
+    
+    // Disable all NMEA messages first
+    const char disableAll[] = "$PUBX,40,GLL,0,0,0,0,0,0*5C\r\n"
+                             "$PUBX,40,GSA,0,0,0,0,0,0*4E\r\n"
+                             "$PUBX,40,GSV,0,0,0,0,0,0*59\r\n"
+                             "$PUBX,40,VTG,0,0,0,0,0,0*5E\r\n";
+    sendUBXCommand(disableAll, strlen(disableAll));
+    HAL_Delay(500);
+    
+    // Enable only the messages we want
+    const char enableRMC[] = "$PUBX,40,RMC,0,1,0,0,0,0*46\r\n";
+    sendUBXCommand(enableRMC, strlen(enableRMC));
+    HAL_Delay(100);
+    
+    const char enableGGA[] = "$PUBX,40,GGA,0,1,0,0,0,0*5B\r\n";
+    sendUBXCommand(enableGGA, strlen(enableGGA));
+    HAL_Delay(100);
+
+    // Enable GSV messages to see satellite info
+    const char enableGSV[] = "$PUBX,40,GSV,0,1,0,0,0,0*59\r\n";
+    sendUBXCommand(enableGSV, strlen(enableGSV));
+    HAL_Delay(100);
+
+    // Configure update rate to 1Hz for stability
+    const char setRate[] = "$PUBX,40,ZDA,0,1,0,0,0,0*44\r\n";
+    sendUBXCommand(setRate, strlen(setRate));
+    HAL_Delay(100);
+    
+    printToConsole("GPS Initialization complete\r\n");
+    HAL_Delay(1000);  // Give it time to start sending data
+}
 /* USER CODE END 0 */
 
 /**
@@ -102,7 +394,12 @@ int main(void)
   MX_RTC_Init();
   MX_TIM1_Init();
   MX_TIM4_Init();
+  MX_USART6_UART_Init();
   /* USER CODE BEGIN 2 */
+
+  // Initialize GPS
+  initGPS();
+  
   sr04.trig_port = GPIOA;
   sr04.trig_pin = GPIO_PIN_9;
   sr04.echo_htim = &htim1;
@@ -124,18 +421,39 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-	    sr04_trigger(&sr04);
-	    sr04_trigger(&sr04_tim4);
-	    HAL_Delay(100);
+    printToConsole("--------------------------------\r\n\n");
 
-		// Print the distance using UART
-		char msg[50];
-		sprintf(msg, "Distance (Sensor 1): %lu mm\r\n", sr04.distance); // @suppress("Float formatting support")
-		HAL_UART_Transmit(&huart2, (uint8_t *)msg, strlen(msg), HAL_MAX_DELAY);
+    // Print the distance using UART
+    if (false) {
+      sr04_trigger(&sr04);
+      sr04_trigger(&sr04_tim4);
 
-		msg[50];
-		sprintf(msg, "Distance (Sensor 2): %lu mm\r\n", sr04_tim4.distance); // @suppress("Float formatting support")
-		HAL_UART_Transmit(&huart2, (uint8_t *)msg, strlen(msg), HAL_MAX_DELAY);
+      // Print the distance using UART
+      printToConsole("Ultrasonic 1: %lu mm\r\n", sr04.distance); // @suppress("Float formatting support")
+      printToConsole("Ultrasonic 2: %lu mm\r\n", sr04_tim4.distance); // @suppress("Float formatting support")
+    }
+
+
+    // Print the GPS output
+    if (true) {
+      printToConsole("\r\n=== New GPS Reading ===\r\n");
+      
+      // Try multiple times to get a valid sentence
+      bool success = false;
+      for(int attempts = 0; attempts < 3 && !success; attempts++) {
+          if (attempts > 0) {
+              printToConsole("Retry attempt %d\r\n", attempts);
+          }
+          success = printCurrentGpsOutput();
+      }
+      
+      if (!success) {
+          printToConsole("Failed after all attempts\r\n");
+      }
+    }
+
+    // Wait for 500ms before triggering again
+    HAL_Delay(1000);
   }
   /* USER CODE END 3 */
 }
@@ -369,6 +687,39 @@ static void MX_USART2_UART_Init(void)
   /* USER CODE BEGIN USART2_Init 2 */
 
   /* USER CODE END USART2_Init 2 */
+
+}
+
+/**
+  * @brief USART6 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_USART6_UART_Init(void)
+{
+
+  /* USER CODE BEGIN USART6_Init 0 */
+
+  /* USER CODE END USART6_Init 0 */
+
+  /* USER CODE BEGIN USART6_Init 1 */
+
+  /* USER CODE END USART6_Init 1 */
+  huart6.Instance = USART6;
+  huart6.Init.BaudRate = 9600;
+  huart6.Init.WordLength = UART_WORDLENGTH_8B;
+  huart6.Init.StopBits = UART_STOPBITS_1;
+  huart6.Init.Parity = UART_PARITY_NONE;
+  huart6.Init.Mode = UART_MODE_TX_RX;
+  huart6.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+  huart6.Init.OverSampling = UART_OVERSAMPLING_16;
+  if (HAL_UART_Init(&huart6) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN USART6_Init 2 */
+
+  /* USER CODE END USART6_Init 2 */
 
 }
 
