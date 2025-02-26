@@ -31,8 +31,7 @@ typedef struct {
 // Function prototypes
 void M8Q_Init(void);
 bool M8Q_ParseNMEA(const char* sentence, GPS_Data* data);
-bool M8Q_ParseGNRMC(const char* sentence, GPS_Data* data);
-bool M8Q_ParseGNGGA(const char* sentence, GPS_Data* data);
-bool M8Q_ParseGNTXT(const char* sentence, GPS_Data* data);
+bool M8Q_ParseGPRMC(const char* sentence, GPS_Data* data);
+bool M8Q_ParseGPGGA(const char* sentence, GPS_Data* data);
 
 #endif // M8Q_H
