@@ -433,17 +433,23 @@ bool getNMEASentence(char *buffer, size_t maxSize) {
     uint16_t startPos = UINT16_MAX;
     uint16_t endPos = UINT16_MAX;
     uint16_t currentHead = rxHead; // Capture current position
-    
-    // Search from last position to current head
     uint16_t pos = searchPos;
-    while (pos != currentHead) {
-        if (uartRxBuffer[pos] == '$' && startPos == UINT16_MAX) {
-            startPos = pos;
-        } else if (uartRxBuffer[pos] == '\n' && startPos != UINT16_MAX) {
-            endPos = pos;
+    uint16_t searchEndPos = (currentHead >= searchPos) ? currentHead : (currentHead + UART_RX_BUFFER_SIZE);
+    
+    // Search for complete NMEA sentence
+    while (pos < searchEndPos) {
+        uint16_t bufferPos = pos % UART_RX_BUFFER_SIZE;
+        
+        // Look for sentence start
+        if (uartRxBuffer[bufferPos] == '$' && startPos == UINT16_MAX) {
+            startPos = bufferPos;
+        }
+        // Look for sentence end (CR+LF or just LF)
+        else if (startPos != UINT16_MAX && uartRxBuffer[bufferPos] == '\n') {
+            endPos = bufferPos;
             break;
         }
-        pos = (pos + 1) % UART_RX_BUFFER_SIZE;
+        pos++;
     }
     
     // If complete sentence found
@@ -451,15 +457,37 @@ bool getNMEASentence(char *buffer, size_t maxSize) {
         uint16_t length = 0;
         pos = startPos;
         
+        // Calculate sentence length accounting for buffer wrap
+        uint16_t sentenceLength = (endPos >= startPos) ? 
+            (endPos - startPos + 1) : 
+            (UART_RX_BUFFER_SIZE - startPos + endPos + 1);
+            
+        // Check if sentence fits in output buffer
+        if (sentenceLength >= maxSize) {
+            searchPos = (endPos + 1) % UART_RX_BUFFER_SIZE;
+            return false;
+        }
+        
         // Copy sentence to output buffer
-        while (pos != ((endPos + 1) % UART_RX_BUFFER_SIZE) && length < maxSize - 1) {
+        while (length < sentenceLength && length < maxSize - 1) {
             buffer[length++] = uartRxBuffer[pos];
             pos = (pos + 1) % UART_RX_BUFFER_SIZE;
         }
         
         buffer[length] = '\0';
-        searchPos = (endPos + 1) % UART_RX_BUFFER_SIZE; // Update search position
-        return true;
+        searchPos = (endPos + 1) % UART_RX_BUFFER_SIZE;
+        
+        // Validate basic NMEA format
+        if (length > 6 && buffer[0] == '$' && 
+            (buffer[length-2] == '\r' || buffer[length-1] == '\n')) {
+            return true;
+        }
+    }
+    
+    // If we've searched the entire new data without finding a sentence,
+    // move search position to avoid re-searching
+    if (pos >= searchEndPos) {
+        searchPos = currentHead;
     }
     
     return false;
@@ -468,9 +496,9 @@ bool getNMEASentence(char *buffer, size_t maxSize) {
 // UART reception complete callback
 void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
     if (huart->Instance == USART6) {
-        rxHead = Size;
+        rxHead = (rxHead + Size) % UART_RX_BUFFER_SIZE;
         
-        // Restart DMA reception in IDLE mode
+        // Restart DMA reception
         HAL_UARTEx_ReceiveToIdle_DMA(&huart6, uartRxBuffer, UART_RX_BUFFER_SIZE);
         __HAL_DMA_DISABLE_IT(huart6.hdmarx, DMA_IT_HT); // Disable Half Transfer interrupt
     }
@@ -534,32 +562,122 @@ int main(void)
     // Process GPS NMEA sentences from DMA buffer
     char nmeaBuffer[256];
     if (getNMEASentence(nmeaBuffer, sizeof(nmeaBuffer))) {
-      // Process the NMEA sentence
-      if (strstr(nmeaBuffer, "$GNRMC")) {
-        printToConsole("Message Type: RMC (Position/Speed/Time)\r\n");
+        // Debug raw NMEA sentence
+        printToConsole("\r\n--- Raw NMEA Sentence ---\r\n");
+        printToConsole("Length: %d bytes\r\n", strlen(nmeaBuffer));
+        printToConsole("Content: %s", nmeaBuffer);
         
-        if (M8Q_ParseGNRMC(nmeaBuffer, &gps_data)) {
-          // Your existing RMC handling code
-        } else {
-          printToConsole("ERROR: Failed to parse RMC message\r\n");
-          printToConsole("Raw: %s\r\n", nmeaBuffer);
+        if (strstr(nmeaBuffer, "$GNRMC")) {
+            printToConsole("\r\n=== GNRMC Message Detected ===\r\n");
+            
+            // Debug each field before parsing
+            char *saveptr;
+            char *token = strtok_r(nmeaBuffer, ",", &saveptr);
+            int fieldIndex = 0;
+            
+            while (token != NULL) {
+                switch(fieldIndex) {
+                    case 0: printToConsole("Message ID: %s\r\n", token); break;
+                    case 1: printToConsole("UTC Time: %s\r\n", token); break;
+                    case 2: printToConsole("Status: %s (%s)\r\n", token, 
+                            (token[0] == 'A') ? "Active" : "Void"); break;
+                    case 3: printToConsole("Latitude: %s\r\n", token); break;
+                    case 4: printToConsole("N/S Indicator: %s\r\n", token); break;
+                    case 5: printToConsole("Longitude: %s\r\n", token); break;
+                    case 6: printToConsole("E/W Indicator: %s\r\n", token); break;
+                    case 7: printToConsole("Speed (knots): %s\r\n", token); break;
+                    case 8: printToConsole("Course: %s\r\n", token); break;
+                    case 9: printToConsole("Date: %s\r\n", token); break;
+                    default: printToConsole("Field %d: %s\r\n", fieldIndex, token);
+                }
+                token = strtok_r(NULL, ",", &saveptr);
+                fieldIndex++;
+            }
+            
+            printToConsole("Total fields: %d (expecting 12-13)\r\n", fieldIndex);
+            
+            // Try to parse with M8Q_ParseGNRMC
+            if (M8Q_ParseGNRMC(nmeaBuffer, &gps_data)) {
+                printToConsole("\r\nParsing Successful!\r\n");
+                printToConsole("Time: %02d:%02d:%02d UTC\r\n", 
+                    gps_data.hours, gps_data.minutes, gps_data.seconds);
+                printToConsole("Fix Valid: %s\r\n", 
+                    gps_data.fix_valid ? "Yes" : "No");
+                printToConsole("Position: %.6f%c, %.6f%c\r\n",
+                    gps_data.latitude, gps_data.lat_direction,
+                    gps_data.longitude, gps_data.lon_direction);
+                if (gps_data.speed_knots > 0) {
+                    printToConsole("Speed: %.2f knots\r\n", gps_data.speed_knots);
+                    printToConsole("Course: %.2f degrees\r\n", gps_data.course);
+                }
+            } else {
+                printToConsole("\r\nParsing Failed!\r\n");
+                printToConsole("Checksum validation: %s\r\n", 
+                    (strchr(nmeaBuffer, '*') != NULL) ? "Present" : "Missing");
+            }
+            printToConsole("=========================\r\n");
+        } 
+        else if (strstr(nmeaBuffer, "$GNGGA")) {
+            printToConsole("Message Type: GGA (GPS Fix Data)\r\n");
+            
+            // Parse GGA message fields
+            char *saveptr;
+            char *token = strtok_r(nmeaBuffer, ",", &saveptr);
+            int field = 0;
+            
+            while (token != NULL) {
+                switch(field) {
+                    case 6: // Fix quality
+                        printToConsole("Fix Quality: ");
+                        switch(atoi(token)) {
+                            case 0: printToConsole("Invalid\r\n"); break;
+                            case 1: printToConsole("GPS Fix\r\n"); break;
+                            case 2: printToConsole("DGPS Fix\r\n"); break;
+                            default: printToConsole("Unknown (%s)\r\n", token); break;
+                        }
+                        break;
+                    case 7: // Satellites in use
+                        printToConsole("Satellites: %s in use\r\n", token);
+                        break;
+                    case 8: // HDOP
+                        {
+                            float hdop = atof(token);
+                            printToConsole("HDOP: %.1f ", hdop);
+                            if (hdop < 1.0) printToConsole("(Excellent)\r\n");
+                            else if (hdop < 2.0) printToConsole("(Good)\r\n");
+                            else if (hdop < 5.0) printToConsole("(Moderate)\r\n");
+                            else printToConsole("(Poor)\r\n");
+                        }
+                        break;
+                }
+                field++;
+                token = strtok_r(NULL, ",", &saveptr);
+            }
         }
-      } 
-      else if (strstr(nmeaBuffer, "$GNGGA")) {
-        printToConsole("Message Type: GGA (GPS Fix Data)\r\n");
-        // Your existing GGA handling code
-      }
-      else if (strstr(nmeaBuffer, "$GNTXT")) {
-        GPS_Status status = parseGPSTXT(nmeaBuffer);
-        // Your existing TXT handling code
-      }
-      else {
-        printToConsole("Message Type: Other (%.*s)\r\n", 5, nmeaBuffer);
-      }
+        else if (strstr(nmeaBuffer, "$GNTXT")) {
+            GPS_Status status = parseGPSTXT(nmeaBuffer);
+            if (status != GPS_STATUS_NO_FIX) {
+                switch(status) {
+                    case GPS_STATUS_INIT:
+                        printToConsole("GPS Status: Initializing antenna\r\n");
+                        break;
+                    case GPS_STATUS_OK:
+                        printToConsole("GPS Status: Antenna OK, waiting for fix\r\n");
+                        break;
+                    case GPS_STATUS_ERROR:
+                        printToConsole("GPS Status: Antenna error detected!\r\n");
+                        break;
+                }
+            }
+            printToConsole("GPS Info Message: %s", nmeaBuffer);
+        }
+        else {
+            printToConsole("Other Message Type: %.5s\r\n", nmeaBuffer);
+        }
     }
 
-    // Wait for 500ms before triggering again
-    // HAL_Delay(1000);
+    // Optional: Add a small delay to prevent console flooding
+    HAL_Delay(10);
   }
   /* USER CODE END 3 */
 }
