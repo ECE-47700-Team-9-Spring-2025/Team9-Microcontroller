@@ -12,7 +12,7 @@
 
 # =============================================================================
 # Project: main
-# Configurations: 
+# Configurations: Debug
 # =============================================================================
 
 #############################################
@@ -20,6 +20,11 @@
 
 ninja_required_version = 1.5
 
+
+#############################################
+# Set configuration variable for custom commands.
+
+CONFIGURATION = Debug
 # =============================================================================
 # Include auxiliary files.
 
@@ -44,39 +49,213 @@ cmake_ninja_workdir = /Users/jwstanwick/Documents/ECE47700/Microcontroller/main/
 
 build cmake_object_order_depends_target_main: phony || .
 
-build CMakeFiles/main.dir/Src/main.c.obj: C_COMPILER__main_unscanned_ /Users/jwstanwick/Documents/ECE47700/Microcontroller/main/Src/main.c || cmake_object_order_depends_target_main
-  DEP_FILE = CMakeFiles/main.dir/Src/main.c.obj.d
-  FLAGS = -fdata-sections -ffunction-sections -Wl,--gc-sections -std=gnu11 -mthumb -mcpu=cortex-m4 -mfpu=fpv4-sp-d16 -mfloat-abi=hard -Wall -Wextra -Wpedantic -Wno-unused-parameter
-  INCLUDES = -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/Inc
+build CMakeFiles/main.dir/Core/Src/main.c.obj: C_COMPILER__main_unscanned_Debug /Users/jwstanwick/Documents/ECE47700/Microcontroller/main/Core/Src/main.c || cmake_object_order_depends_target_main
+  DEFINES = -DDEBUG -DSTM32F411xE -DUSE_HAL_DRIVER
+  DEP_FILE = CMakeFiles/main.dir/Core/Src/main.c.obj.d
+  FLAGS = -mcpu=cortex-m4 -mfpu=fpv4-sp-d16 -mfloat-abi=hard  -Wall -Wextra -Wpedantic -fdata-sections -ffunction-sections -O0 -g3 -g -std=gnu11
+  INCLUDES = -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Core/Inc -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Drivers/STM32F4xx_HAL_Driver/Inc -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Drivers/STM32F4xx_HAL_Driver/Inc/Legacy -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Drivers/CMSIS/Device/ST/STM32F4xx/Include -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Drivers/CMSIS/Include
   OBJECT_DIR = CMakeFiles/main.dir
-  OBJECT_FILE_DIR = CMakeFiles/main.dir/Src
+  OBJECT_FILE_DIR = CMakeFiles/main.dir/Core/Src
   TARGET_COMPILE_PDB = CMakeFiles/main.dir/
   TARGET_PDB = main.pdb
 
-build CMakeFiles/main.dir/Src/syscall.c.obj: C_COMPILER__main_unscanned_ /Users/jwstanwick/Documents/ECE47700/Microcontroller/main/Src/syscall.c || cmake_object_order_depends_target_main
-  DEP_FILE = CMakeFiles/main.dir/Src/syscall.c.obj.d
-  FLAGS = -fdata-sections -ffunction-sections -Wl,--gc-sections -std=gnu11 -mthumb -mcpu=cortex-m4 -mfpu=fpv4-sp-d16 -mfloat-abi=hard -Wall -Wextra -Wpedantic -Wno-unused-parameter
-  INCLUDES = -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/Inc
+build CMakeFiles/main.dir/Core/Src/stm32f4xx_it.c.obj: C_COMPILER__main_unscanned_Debug /Users/jwstanwick/Documents/ECE47700/Microcontroller/main/Core/Src/stm32f4xx_it.c || cmake_object_order_depends_target_main
+  DEFINES = -DDEBUG -DSTM32F411xE -DUSE_HAL_DRIVER
+  DEP_FILE = CMakeFiles/main.dir/Core/Src/stm32f4xx_it.c.obj.d
+  FLAGS = -mcpu=cortex-m4 -mfpu=fpv4-sp-d16 -mfloat-abi=hard  -Wall -Wextra -Wpedantic -fdata-sections -ffunction-sections -O0 -g3 -g -std=gnu11
+  INCLUDES = -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Core/Inc -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Drivers/STM32F4xx_HAL_Driver/Inc -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Drivers/STM32F4xx_HAL_Driver/Inc/Legacy -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Drivers/CMSIS/Device/ST/STM32F4xx/Include -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Drivers/CMSIS/Include
   OBJECT_DIR = CMakeFiles/main.dir
-  OBJECT_FILE_DIR = CMakeFiles/main.dir/Src
+  OBJECT_FILE_DIR = CMakeFiles/main.dir/Core/Src
   TARGET_COMPILE_PDB = CMakeFiles/main.dir/
   TARGET_PDB = main.pdb
 
-build CMakeFiles/main.dir/Src/sysmem.c.obj: C_COMPILER__main_unscanned_ /Users/jwstanwick/Documents/ECE47700/Microcontroller/main/Src/sysmem.c || cmake_object_order_depends_target_main
-  DEP_FILE = CMakeFiles/main.dir/Src/sysmem.c.obj.d
-  FLAGS = -fdata-sections -ffunction-sections -Wl,--gc-sections -std=gnu11 -mthumb -mcpu=cortex-m4 -mfpu=fpv4-sp-d16 -mfloat-abi=hard -Wall -Wextra -Wpedantic -Wno-unused-parameter
-  INCLUDES = -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/Inc
+build CMakeFiles/main.dir/Core/Src/stm32f4xx_hal_msp.c.obj: C_COMPILER__main_unscanned_Debug /Users/jwstanwick/Documents/ECE47700/Microcontroller/main/Core/Src/stm32f4xx_hal_msp.c || cmake_object_order_depends_target_main
+  DEFINES = -DDEBUG -DSTM32F411xE -DUSE_HAL_DRIVER
+  DEP_FILE = CMakeFiles/main.dir/Core/Src/stm32f4xx_hal_msp.c.obj.d
+  FLAGS = -mcpu=cortex-m4 -mfpu=fpv4-sp-d16 -mfloat-abi=hard  -Wall -Wextra -Wpedantic -fdata-sections -ffunction-sections -O0 -g3 -g -std=gnu11
+  INCLUDES = -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Core/Inc -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Drivers/STM32F4xx_HAL_Driver/Inc -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Drivers/STM32F4xx_HAL_Driver/Inc/Legacy -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Drivers/CMSIS/Device/ST/STM32F4xx/Include -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Drivers/CMSIS/Include
   OBJECT_DIR = CMakeFiles/main.dir
-  OBJECT_FILE_DIR = CMakeFiles/main.dir/Src
+  OBJECT_FILE_DIR = CMakeFiles/main.dir/Core/Src
   TARGET_COMPILE_PDB = CMakeFiles/main.dir/
   TARGET_PDB = main.pdb
 
-build CMakeFiles/main.dir/Startup/startup_stm32f411retx.s.obj: ASM_COMPILER__main_unscanned_ /Users/jwstanwick/Documents/ECE47700/Microcontroller/main/Startup/startup_stm32f411retx.s || cmake_object_order_depends_target_main
-  DEP_FILE = CMakeFiles/main.dir/Startup/startup_stm32f411retx.s.obj.d
-  FLAGS = -mthumb -mcpu=cortex-m4 -mfpu=fpv4-sp-d16 -mfloat-abi=hard -Wall -Wextra -Wpedantic -Wno-unused-parameter -x assembler-with-cpp -MMD -MP
-  INCLUDES = -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main
+build CMakeFiles/main.dir/Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_uart.c.obj: C_COMPILER__main_unscanned_Debug /Users/jwstanwick/Documents/ECE47700/Microcontroller/main/Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_uart.c || cmake_object_order_depends_target_main
+  DEFINES = -DDEBUG -DSTM32F411xE -DUSE_HAL_DRIVER
+  DEP_FILE = CMakeFiles/main.dir/Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_uart.c.obj.d
+  FLAGS = -mcpu=cortex-m4 -mfpu=fpv4-sp-d16 -mfloat-abi=hard  -Wall -Wextra -Wpedantic -fdata-sections -ffunction-sections -O0 -g3 -g -std=gnu11
+  INCLUDES = -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Core/Inc -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Drivers/STM32F4xx_HAL_Driver/Inc -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Drivers/STM32F4xx_HAL_Driver/Inc/Legacy -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Drivers/CMSIS/Device/ST/STM32F4xx/Include -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Drivers/CMSIS/Include
   OBJECT_DIR = CMakeFiles/main.dir
-  OBJECT_FILE_DIR = CMakeFiles/main.dir/Startup
+  OBJECT_FILE_DIR = CMakeFiles/main.dir/Drivers/STM32F4xx_HAL_Driver/Src
+  TARGET_COMPILE_PDB = CMakeFiles/main.dir/
+  TARGET_PDB = main.pdb
+
+build CMakeFiles/main.dir/Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_rcc.c.obj: C_COMPILER__main_unscanned_Debug /Users/jwstanwick/Documents/ECE47700/Microcontroller/main/Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_rcc.c || cmake_object_order_depends_target_main
+  DEFINES = -DDEBUG -DSTM32F411xE -DUSE_HAL_DRIVER
+  DEP_FILE = CMakeFiles/main.dir/Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_rcc.c.obj.d
+  FLAGS = -mcpu=cortex-m4 -mfpu=fpv4-sp-d16 -mfloat-abi=hard  -Wall -Wextra -Wpedantic -fdata-sections -ffunction-sections -O0 -g3 -g -std=gnu11
+  INCLUDES = -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Core/Inc -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Drivers/STM32F4xx_HAL_Driver/Inc -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Drivers/STM32F4xx_HAL_Driver/Inc/Legacy -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Drivers/CMSIS/Device/ST/STM32F4xx/Include -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Drivers/CMSIS/Include
+  OBJECT_DIR = CMakeFiles/main.dir
+  OBJECT_FILE_DIR = CMakeFiles/main.dir/Drivers/STM32F4xx_HAL_Driver/Src
+  TARGET_COMPILE_PDB = CMakeFiles/main.dir/
+  TARGET_PDB = main.pdb
+
+build CMakeFiles/main.dir/Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_rcc_ex.c.obj: C_COMPILER__main_unscanned_Debug /Users/jwstanwick/Documents/ECE47700/Microcontroller/main/Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_rcc_ex.c || cmake_object_order_depends_target_main
+  DEFINES = -DDEBUG -DSTM32F411xE -DUSE_HAL_DRIVER
+  DEP_FILE = CMakeFiles/main.dir/Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_rcc_ex.c.obj.d
+  FLAGS = -mcpu=cortex-m4 -mfpu=fpv4-sp-d16 -mfloat-abi=hard  -Wall -Wextra -Wpedantic -fdata-sections -ffunction-sections -O0 -g3 -g -std=gnu11
+  INCLUDES = -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Core/Inc -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Drivers/STM32F4xx_HAL_Driver/Inc -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Drivers/STM32F4xx_HAL_Driver/Inc/Legacy -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Drivers/CMSIS/Device/ST/STM32F4xx/Include -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Drivers/CMSIS/Include
+  OBJECT_DIR = CMakeFiles/main.dir
+  OBJECT_FILE_DIR = CMakeFiles/main.dir/Drivers/STM32F4xx_HAL_Driver/Src
+  TARGET_COMPILE_PDB = CMakeFiles/main.dir/
+  TARGET_PDB = main.pdb
+
+build CMakeFiles/main.dir/Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_flash.c.obj: C_COMPILER__main_unscanned_Debug /Users/jwstanwick/Documents/ECE47700/Microcontroller/main/Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_flash.c || cmake_object_order_depends_target_main
+  DEFINES = -DDEBUG -DSTM32F411xE -DUSE_HAL_DRIVER
+  DEP_FILE = CMakeFiles/main.dir/Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_flash.c.obj.d
+  FLAGS = -mcpu=cortex-m4 -mfpu=fpv4-sp-d16 -mfloat-abi=hard  -Wall -Wextra -Wpedantic -fdata-sections -ffunction-sections -O0 -g3 -g -std=gnu11
+  INCLUDES = -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Core/Inc -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Drivers/STM32F4xx_HAL_Driver/Inc -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Drivers/STM32F4xx_HAL_Driver/Inc/Legacy -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Drivers/CMSIS/Device/ST/STM32F4xx/Include -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Drivers/CMSIS/Include
+  OBJECT_DIR = CMakeFiles/main.dir
+  OBJECT_FILE_DIR = CMakeFiles/main.dir/Drivers/STM32F4xx_HAL_Driver/Src
+  TARGET_COMPILE_PDB = CMakeFiles/main.dir/
+  TARGET_PDB = main.pdb
+
+build CMakeFiles/main.dir/Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_flash_ex.c.obj: C_COMPILER__main_unscanned_Debug /Users/jwstanwick/Documents/ECE47700/Microcontroller/main/Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_flash_ex.c || cmake_object_order_depends_target_main
+  DEFINES = -DDEBUG -DSTM32F411xE -DUSE_HAL_DRIVER
+  DEP_FILE = CMakeFiles/main.dir/Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_flash_ex.c.obj.d
+  FLAGS = -mcpu=cortex-m4 -mfpu=fpv4-sp-d16 -mfloat-abi=hard  -Wall -Wextra -Wpedantic -fdata-sections -ffunction-sections -O0 -g3 -g -std=gnu11
+  INCLUDES = -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Core/Inc -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Drivers/STM32F4xx_HAL_Driver/Inc -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Drivers/STM32F4xx_HAL_Driver/Inc/Legacy -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Drivers/CMSIS/Device/ST/STM32F4xx/Include -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Drivers/CMSIS/Include
+  OBJECT_DIR = CMakeFiles/main.dir
+  OBJECT_FILE_DIR = CMakeFiles/main.dir/Drivers/STM32F4xx_HAL_Driver/Src
+  TARGET_COMPILE_PDB = CMakeFiles/main.dir/
+  TARGET_PDB = main.pdb
+
+build CMakeFiles/main.dir/Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_flash_ramfunc.c.obj: C_COMPILER__main_unscanned_Debug /Users/jwstanwick/Documents/ECE47700/Microcontroller/main/Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_flash_ramfunc.c || cmake_object_order_depends_target_main
+  DEFINES = -DDEBUG -DSTM32F411xE -DUSE_HAL_DRIVER
+  DEP_FILE = CMakeFiles/main.dir/Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_flash_ramfunc.c.obj.d
+  FLAGS = -mcpu=cortex-m4 -mfpu=fpv4-sp-d16 -mfloat-abi=hard  -Wall -Wextra -Wpedantic -fdata-sections -ffunction-sections -O0 -g3 -g -std=gnu11
+  INCLUDES = -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Core/Inc -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Drivers/STM32F4xx_HAL_Driver/Inc -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Drivers/STM32F4xx_HAL_Driver/Inc/Legacy -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Drivers/CMSIS/Device/ST/STM32F4xx/Include -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Drivers/CMSIS/Include
+  OBJECT_DIR = CMakeFiles/main.dir
+  OBJECT_FILE_DIR = CMakeFiles/main.dir/Drivers/STM32F4xx_HAL_Driver/Src
+  TARGET_COMPILE_PDB = CMakeFiles/main.dir/
+  TARGET_PDB = main.pdb
+
+build CMakeFiles/main.dir/Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_gpio.c.obj: C_COMPILER__main_unscanned_Debug /Users/jwstanwick/Documents/ECE47700/Microcontroller/main/Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_gpio.c || cmake_object_order_depends_target_main
+  DEFINES = -DDEBUG -DSTM32F411xE -DUSE_HAL_DRIVER
+  DEP_FILE = CMakeFiles/main.dir/Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_gpio.c.obj.d
+  FLAGS = -mcpu=cortex-m4 -mfpu=fpv4-sp-d16 -mfloat-abi=hard  -Wall -Wextra -Wpedantic -fdata-sections -ffunction-sections -O0 -g3 -g -std=gnu11
+  INCLUDES = -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Core/Inc -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Drivers/STM32F4xx_HAL_Driver/Inc -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Drivers/STM32F4xx_HAL_Driver/Inc/Legacy -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Drivers/CMSIS/Device/ST/STM32F4xx/Include -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Drivers/CMSIS/Include
+  OBJECT_DIR = CMakeFiles/main.dir
+  OBJECT_FILE_DIR = CMakeFiles/main.dir/Drivers/STM32F4xx_HAL_Driver/Src
+  TARGET_COMPILE_PDB = CMakeFiles/main.dir/
+  TARGET_PDB = main.pdb
+
+build CMakeFiles/main.dir/Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_dma_ex.c.obj: C_COMPILER__main_unscanned_Debug /Users/jwstanwick/Documents/ECE47700/Microcontroller/main/Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_dma_ex.c || cmake_object_order_depends_target_main
+  DEFINES = -DDEBUG -DSTM32F411xE -DUSE_HAL_DRIVER
+  DEP_FILE = CMakeFiles/main.dir/Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_dma_ex.c.obj.d
+  FLAGS = -mcpu=cortex-m4 -mfpu=fpv4-sp-d16 -mfloat-abi=hard  -Wall -Wextra -Wpedantic -fdata-sections -ffunction-sections -O0 -g3 -g -std=gnu11
+  INCLUDES = -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Core/Inc -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Drivers/STM32F4xx_HAL_Driver/Inc -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Drivers/STM32F4xx_HAL_Driver/Inc/Legacy -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Drivers/CMSIS/Device/ST/STM32F4xx/Include -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Drivers/CMSIS/Include
+  OBJECT_DIR = CMakeFiles/main.dir
+  OBJECT_FILE_DIR = CMakeFiles/main.dir/Drivers/STM32F4xx_HAL_Driver/Src
+  TARGET_COMPILE_PDB = CMakeFiles/main.dir/
+  TARGET_PDB = main.pdb
+
+build CMakeFiles/main.dir/Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_dma.c.obj: C_COMPILER__main_unscanned_Debug /Users/jwstanwick/Documents/ECE47700/Microcontroller/main/Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_dma.c || cmake_object_order_depends_target_main
+  DEFINES = -DDEBUG -DSTM32F411xE -DUSE_HAL_DRIVER
+  DEP_FILE = CMakeFiles/main.dir/Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_dma.c.obj.d
+  FLAGS = -mcpu=cortex-m4 -mfpu=fpv4-sp-d16 -mfloat-abi=hard  -Wall -Wextra -Wpedantic -fdata-sections -ffunction-sections -O0 -g3 -g -std=gnu11
+  INCLUDES = -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Core/Inc -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Drivers/STM32F4xx_HAL_Driver/Inc -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Drivers/STM32F4xx_HAL_Driver/Inc/Legacy -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Drivers/CMSIS/Device/ST/STM32F4xx/Include -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Drivers/CMSIS/Include
+  OBJECT_DIR = CMakeFiles/main.dir
+  OBJECT_FILE_DIR = CMakeFiles/main.dir/Drivers/STM32F4xx_HAL_Driver/Src
+  TARGET_COMPILE_PDB = CMakeFiles/main.dir/
+  TARGET_PDB = main.pdb
+
+build CMakeFiles/main.dir/Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_pwr.c.obj: C_COMPILER__main_unscanned_Debug /Users/jwstanwick/Documents/ECE47700/Microcontroller/main/Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_pwr.c || cmake_object_order_depends_target_main
+  DEFINES = -DDEBUG -DSTM32F411xE -DUSE_HAL_DRIVER
+  DEP_FILE = CMakeFiles/main.dir/Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_pwr.c.obj.d
+  FLAGS = -mcpu=cortex-m4 -mfpu=fpv4-sp-d16 -mfloat-abi=hard  -Wall -Wextra -Wpedantic -fdata-sections -ffunction-sections -O0 -g3 -g -std=gnu11
+  INCLUDES = -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Core/Inc -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Drivers/STM32F4xx_HAL_Driver/Inc -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Drivers/STM32F4xx_HAL_Driver/Inc/Legacy -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Drivers/CMSIS/Device/ST/STM32F4xx/Include -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Drivers/CMSIS/Include
+  OBJECT_DIR = CMakeFiles/main.dir
+  OBJECT_FILE_DIR = CMakeFiles/main.dir/Drivers/STM32F4xx_HAL_Driver/Src
+  TARGET_COMPILE_PDB = CMakeFiles/main.dir/
+  TARGET_PDB = main.pdb
+
+build CMakeFiles/main.dir/Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_pwr_ex.c.obj: C_COMPILER__main_unscanned_Debug /Users/jwstanwick/Documents/ECE47700/Microcontroller/main/Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_pwr_ex.c || cmake_object_order_depends_target_main
+  DEFINES = -DDEBUG -DSTM32F411xE -DUSE_HAL_DRIVER
+  DEP_FILE = CMakeFiles/main.dir/Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_pwr_ex.c.obj.d
+  FLAGS = -mcpu=cortex-m4 -mfpu=fpv4-sp-d16 -mfloat-abi=hard  -Wall -Wextra -Wpedantic -fdata-sections -ffunction-sections -O0 -g3 -g -std=gnu11
+  INCLUDES = -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Core/Inc -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Drivers/STM32F4xx_HAL_Driver/Inc -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Drivers/STM32F4xx_HAL_Driver/Inc/Legacy -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Drivers/CMSIS/Device/ST/STM32F4xx/Include -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Drivers/CMSIS/Include
+  OBJECT_DIR = CMakeFiles/main.dir
+  OBJECT_FILE_DIR = CMakeFiles/main.dir/Drivers/STM32F4xx_HAL_Driver/Src
+  TARGET_COMPILE_PDB = CMakeFiles/main.dir/
+  TARGET_PDB = main.pdb
+
+build CMakeFiles/main.dir/Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_cortex.c.obj: C_COMPILER__main_unscanned_Debug /Users/jwstanwick/Documents/ECE47700/Microcontroller/main/Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_cortex.c || cmake_object_order_depends_target_main
+  DEFINES = -DDEBUG -DSTM32F411xE -DUSE_HAL_DRIVER
+  DEP_FILE = CMakeFiles/main.dir/Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_cortex.c.obj.d
+  FLAGS = -mcpu=cortex-m4 -mfpu=fpv4-sp-d16 -mfloat-abi=hard  -Wall -Wextra -Wpedantic -fdata-sections -ffunction-sections -O0 -g3 -g -std=gnu11
+  INCLUDES = -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Core/Inc -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Drivers/STM32F4xx_HAL_Driver/Inc -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Drivers/STM32F4xx_HAL_Driver/Inc/Legacy -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Drivers/CMSIS/Device/ST/STM32F4xx/Include -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Drivers/CMSIS/Include
+  OBJECT_DIR = CMakeFiles/main.dir
+  OBJECT_FILE_DIR = CMakeFiles/main.dir/Drivers/STM32F4xx_HAL_Driver/Src
+  TARGET_COMPILE_PDB = CMakeFiles/main.dir/
+  TARGET_PDB = main.pdb
+
+build CMakeFiles/main.dir/Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal.c.obj: C_COMPILER__main_unscanned_Debug /Users/jwstanwick/Documents/ECE47700/Microcontroller/main/Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal.c || cmake_object_order_depends_target_main
+  DEFINES = -DDEBUG -DSTM32F411xE -DUSE_HAL_DRIVER
+  DEP_FILE = CMakeFiles/main.dir/Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal.c.obj.d
+  FLAGS = -mcpu=cortex-m4 -mfpu=fpv4-sp-d16 -mfloat-abi=hard  -Wall -Wextra -Wpedantic -fdata-sections -ffunction-sections -O0 -g3 -g -std=gnu11
+  INCLUDES = -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Core/Inc -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Drivers/STM32F4xx_HAL_Driver/Inc -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Drivers/STM32F4xx_HAL_Driver/Inc/Legacy -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Drivers/CMSIS/Device/ST/STM32F4xx/Include -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Drivers/CMSIS/Include
+  OBJECT_DIR = CMakeFiles/main.dir
+  OBJECT_FILE_DIR = CMakeFiles/main.dir/Drivers/STM32F4xx_HAL_Driver/Src
+  TARGET_COMPILE_PDB = CMakeFiles/main.dir/
+  TARGET_PDB = main.pdb
+
+build CMakeFiles/main.dir/Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_exti.c.obj: C_COMPILER__main_unscanned_Debug /Users/jwstanwick/Documents/ECE47700/Microcontroller/main/Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_exti.c || cmake_object_order_depends_target_main
+  DEFINES = -DDEBUG -DSTM32F411xE -DUSE_HAL_DRIVER
+  DEP_FILE = CMakeFiles/main.dir/Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_exti.c.obj.d
+  FLAGS = -mcpu=cortex-m4 -mfpu=fpv4-sp-d16 -mfloat-abi=hard  -Wall -Wextra -Wpedantic -fdata-sections -ffunction-sections -O0 -g3 -g -std=gnu11
+  INCLUDES = -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Core/Inc -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Drivers/STM32F4xx_HAL_Driver/Inc -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Drivers/STM32F4xx_HAL_Driver/Inc/Legacy -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Drivers/CMSIS/Device/ST/STM32F4xx/Include -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Drivers/CMSIS/Include
+  OBJECT_DIR = CMakeFiles/main.dir
+  OBJECT_FILE_DIR = CMakeFiles/main.dir/Drivers/STM32F4xx_HAL_Driver/Src
+  TARGET_COMPILE_PDB = CMakeFiles/main.dir/
+  TARGET_PDB = main.pdb
+
+build CMakeFiles/main.dir/Core/Src/system_stm32f4xx.c.obj: C_COMPILER__main_unscanned_Debug /Users/jwstanwick/Documents/ECE47700/Microcontroller/main/Core/Src/system_stm32f4xx.c || cmake_object_order_depends_target_main
+  DEFINES = -DDEBUG -DSTM32F411xE -DUSE_HAL_DRIVER
+  DEP_FILE = CMakeFiles/main.dir/Core/Src/system_stm32f4xx.c.obj.d
+  FLAGS = -mcpu=cortex-m4 -mfpu=fpv4-sp-d16 -mfloat-abi=hard  -Wall -Wextra -Wpedantic -fdata-sections -ffunction-sections -O0 -g3 -g -std=gnu11
+  INCLUDES = -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Core/Inc -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Drivers/STM32F4xx_HAL_Driver/Inc -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Drivers/STM32F4xx_HAL_Driver/Inc/Legacy -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Drivers/CMSIS/Device/ST/STM32F4xx/Include -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Drivers/CMSIS/Include
+  OBJECT_DIR = CMakeFiles/main.dir
+  OBJECT_FILE_DIR = CMakeFiles/main.dir/Core/Src
+  TARGET_COMPILE_PDB = CMakeFiles/main.dir/
+  TARGET_PDB = main.pdb
+
+build CMakeFiles/main.dir/Core/Src/sysmem.c.obj: C_COMPILER__main_unscanned_Debug /Users/jwstanwick/Documents/ECE47700/Microcontroller/main/Core/Src/sysmem.c || cmake_object_order_depends_target_main
+  DEFINES = -DDEBUG -DSTM32F411xE -DUSE_HAL_DRIVER
+  DEP_FILE = CMakeFiles/main.dir/Core/Src/sysmem.c.obj.d
+  FLAGS = -mcpu=cortex-m4 -mfpu=fpv4-sp-d16 -mfloat-abi=hard  -Wall -Wextra -Wpedantic -fdata-sections -ffunction-sections -O0 -g3 -g -std=gnu11
+  INCLUDES = -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Core/Inc -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Drivers/STM32F4xx_HAL_Driver/Inc -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Drivers/STM32F4xx_HAL_Driver/Inc/Legacy -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Drivers/CMSIS/Device/ST/STM32F4xx/Include -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Drivers/CMSIS/Include
+  OBJECT_DIR = CMakeFiles/main.dir
+  OBJECT_FILE_DIR = CMakeFiles/main.dir/Core/Src
+  TARGET_COMPILE_PDB = CMakeFiles/main.dir/
+  TARGET_PDB = main.pdb
+
+build CMakeFiles/main.dir/Core/Src/syscalls.c.obj: C_COMPILER__main_unscanned_Debug /Users/jwstanwick/Documents/ECE47700/Microcontroller/main/Core/Src/syscalls.c || cmake_object_order_depends_target_main
+  DEFINES = -DDEBUG -DSTM32F411xE -DUSE_HAL_DRIVER
+  DEP_FILE = CMakeFiles/main.dir/Core/Src/syscalls.c.obj.d
+  FLAGS = -mcpu=cortex-m4 -mfpu=fpv4-sp-d16 -mfloat-abi=hard  -Wall -Wextra -Wpedantic -fdata-sections -ffunction-sections -O0 -g3 -g -std=gnu11
+  INCLUDES = -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Core/Inc -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Drivers/STM32F4xx_HAL_Driver/Inc -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Drivers/STM32F4xx_HAL_Driver/Inc/Legacy -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Drivers/CMSIS/Device/ST/STM32F4xx/Include -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Drivers/CMSIS/Include
+  OBJECT_DIR = CMakeFiles/main.dir
+  OBJECT_FILE_DIR = CMakeFiles/main.dir/Core/Src
+  TARGET_COMPILE_PDB = CMakeFiles/main.dir/
+  TARGET_PDB = main.pdb
+
+build CMakeFiles/main.dir/startup_stm32f411xe.s.obj: ASM_COMPILER__main_unscanned_Debug /Users/jwstanwick/Documents/ECE47700/Microcontroller/main/startup_stm32f411xe.s || cmake_object_order_depends_target_main
+  DEFINES = -DDEBUG -DSTM32F411xE -DUSE_HAL_DRIVER
+  DEP_FILE = CMakeFiles/main.dir/startup_stm32f411xe.s.obj.d
+  FLAGS = -mcpu=cortex-m4 -mfpu=fpv4-sp-d16 -mfloat-abi=hard  -Wall -Wextra -Wpedantic -fdata-sections -ffunction-sections -O0 -g3 -x assembler-with-cpp -MMD -MP -g
+  INCLUDES = -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Core/Inc -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Drivers/STM32F4xx_HAL_Driver/Inc -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Drivers/STM32F4xx_HAL_Driver/Inc/Legacy -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Drivers/CMSIS/Device/ST/STM32F4xx/Include -I/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx/../../Drivers/CMSIS/Include
+  OBJECT_DIR = CMakeFiles/main.dir
+  OBJECT_FILE_DIR = CMakeFiles/main.dir
   TARGET_COMPILE_PDB = CMakeFiles/main.dir/
   TARGET_PDB = main.pdb
 
@@ -88,12 +267,10 @@ build CMakeFiles/main.dir/Startup/startup_stm32f411retx.s.obj: ASM_COMPILER__mai
 #############################################
 # Link the executable main.elf
 
-build main.elf: C_EXECUTABLE_LINKER__main_ CMakeFiles/main.dir/Src/main.c.obj CMakeFiles/main.dir/Src/syscall.c.obj CMakeFiles/main.dir/Src/sysmem.c.obj CMakeFiles/main.dir/Startup/startup_stm32f411retx.s.obj
-  FLAGS = -fdata-sections -ffunction-sections -Wl,--gc-sections
-  LINK_FLAGS = -T/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/stm32f411retx_FLASH.ld -mthumb -mcpu=cortex-m4 -mfpu=fpv4-sp-d16 -mfloat-abi=hard -Wl,-Map=main.map -u _printf_float --specs=nosys.specs -Wl,--start-group -lc -lm -lstdc++ -lsupc++ -Wl,--end-group -Wl,-z,max-page-size=8 -Wl,--print-memory-usage
-  LINK_PATH = -L/Users/jwstanwick/Documents/ECE47700/Microcontroller/main/main
+build main.elf: C_EXECUTABLE_LINKER__main_Debug CMakeFiles/main.dir/Core/Src/main.c.obj CMakeFiles/main.dir/Core/Src/stm32f4xx_it.c.obj CMakeFiles/main.dir/Core/Src/stm32f4xx_hal_msp.c.obj CMakeFiles/main.dir/Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_uart.c.obj CMakeFiles/main.dir/Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_rcc.c.obj CMakeFiles/main.dir/Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_rcc_ex.c.obj CMakeFiles/main.dir/Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_flash.c.obj CMakeFiles/main.dir/Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_flash_ex.c.obj CMakeFiles/main.dir/Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_flash_ramfunc.c.obj CMakeFiles/main.dir/Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_gpio.c.obj CMakeFiles/main.dir/Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_dma_ex.c.obj CMakeFiles/main.dir/Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_dma.c.obj CMakeFiles/main.dir/Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_pwr.c.obj CMakeFiles/main.dir/Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_pwr_ex.c.obj CMakeFiles/main.dir/Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_cortex.c.obj CMakeFiles/main.dir/Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal.c.obj CMakeFiles/main.dir/Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_exti.c.obj CMakeFiles/main.dir/Core/Src/system_stm32f4xx.c.obj CMakeFiles/main.dir/Core/Src/sysmem.c.obj CMakeFiles/main.dir/Core/Src/syscalls.c.obj CMakeFiles/main.dir/startup_stm32f411xe.s.obj
+  FLAGS = -mcpu=cortex-m4 -mfpu=fpv4-sp-d16 -mfloat-abi=hard  -Wall -Wextra -Wpedantic -fdata-sections -ffunction-sections -O0 -g3 -g
   OBJECT_DIR = CMakeFiles/main.dir
-  POST_BUILD = cd /Users/jwstanwick/Documents/ECE47700/Microcontroller/main && arm-none-eabi-size /Users/jwstanwick/Documents/ECE47700/Microcontroller/main/main.elf && arm-none-eabi-objcopy -O ihex /Users/jwstanwick/Documents/ECE47700/Microcontroller/main/main.elf main.hex && arm-none-eabi-objcopy -O binary /Users/jwstanwick/Documents/ECE47700/Microcontroller/main/main.elf main.bin
+  POST_BUILD = :
   PRE_LINK = :
   TARGET_COMPILE_PDB = CMakeFiles/main.dir/
   TARGET_FILE = main.elf
@@ -124,6 +301,35 @@ build CMakeFiles/rebuild_cache.util: CUSTOM_COMMAND
 build rebuild_cache: phony CMakeFiles/rebuild_cache.util
 
 # =============================================================================
+# Write statements declared in CMakeLists.txt:
+# /Users/jwstanwick/Documents/ECE47700/Microcontroller/main/CMakeLists.txt
+# =============================================================================
+
+
+#############################################
+# Utility command for edit_cache
+
+build cmake/stm32cubemx/CMakeFiles/edit_cache.util: CUSTOM_COMMAND
+  COMMAND = cd /Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx && /opt/homebrew/bin/ccmake -S/Users/jwstanwick/Documents/ECE47700/Microcontroller/main -B/Users/jwstanwick/Documents/ECE47700/Microcontroller/main
+  DESC = Running CMake cache editor...
+  pool = console
+  restat = 1
+
+build cmake/stm32cubemx/edit_cache: phony cmake/stm32cubemx/CMakeFiles/edit_cache.util
+
+
+#############################################
+# Utility command for rebuild_cache
+
+build cmake/stm32cubemx/CMakeFiles/rebuild_cache.util: CUSTOM_COMMAND
+  COMMAND = cd /Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx && /opt/homebrew/bin/cmake --regenerate-during-build -S/Users/jwstanwick/Documents/ECE47700/Microcontroller/main -B/Users/jwstanwick/Documents/ECE47700/Microcontroller/main
+  DESC = Running CMake to regenerate build system...
+  pool = console
+  restat = 1
+
+build cmake/stm32cubemx/rebuild_cache: phony cmake/stm32cubemx/CMakeFiles/rebuild_cache.util
+
+# =============================================================================
 # Target aliases.
 
 build main: phony main.elf
@@ -136,7 +342,14 @@ build main: phony main.elf
 #############################################
 # Folder: /Users/jwstanwick/Documents/ECE47700/Microcontroller/main
 
-build all: phony main.elf
+build all: phony main.elf cmake/stm32cubemx/all
+
+# =============================================================================
+
+#############################################
+# Folder: /Users/jwstanwick/Documents/ECE47700/Microcontroller/main/cmake/stm32cubemx
+
+build cmake/stm32cubemx/all: phony
 
 # =============================================================================
 # Built-in targets
@@ -145,14 +358,14 @@ build all: phony main.elf
 #############################################
 # Re-run CMake if any of its inputs changed.
 
-build build.ninja: RERUN_CMAKE | /opt/homebrew/share/cmake/Modules/CMakeASMCompiler.cmake.in /opt/homebrew/share/cmake/Modules/CMakeASMInformation.cmake /opt/homebrew/share/cmake/Modules/CMakeCCompiler.cmake.in /opt/homebrew/share/cmake/Modules/CMakeCCompilerABI.c /opt/homebrew/share/cmake/Modules/CMakeCInformation.cmake /opt/homebrew/share/cmake/Modules/CMakeCXXCompiler.cmake.in /opt/homebrew/share/cmake/Modules/CMakeCXXCompilerABI.cpp /opt/homebrew/share/cmake/Modules/CMakeCXXInformation.cmake /opt/homebrew/share/cmake/Modules/CMakeCommonLanguageInclude.cmake /opt/homebrew/share/cmake/Modules/CMakeCompilerIdDetection.cmake /opt/homebrew/share/cmake/Modules/CMakeDetermineASMCompiler.cmake /opt/homebrew/share/cmake/Modules/CMakeDetermineCCompiler.cmake /opt/homebrew/share/cmake/Modules/CMakeDetermineCXXCompiler.cmake /opt/homebrew/share/cmake/Modules/CMakeDetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/CMakeDetermineCompilerABI.cmake /opt/homebrew/share/cmake/Modules/CMakeDetermineCompilerId.cmake /opt/homebrew/share/cmake/Modules/CMakeDetermineCompilerSupport.cmake /opt/homebrew/share/cmake/Modules/CMakeDetermineSystem.cmake /opt/homebrew/share/cmake/Modules/CMakeFindBinUtils.cmake /opt/homebrew/share/cmake/Modules/CMakeGenericSystem.cmake /opt/homebrew/share/cmake/Modules/CMakeInitializeConfigs.cmake /opt/homebrew/share/cmake/Modules/CMakeLanguageInformation.cmake /opt/homebrew/share/cmake/Modules/CMakeNinjaFindMake.cmake /opt/homebrew/share/cmake/Modules/CMakeParseImplicitIncludeInfo.cmake /opt/homebrew/share/cmake/Modules/CMakeParseImplicitLinkInfo.cmake /opt/homebrew/share/cmake/Modules/CMakeParseLibraryArchitecture.cmake /opt/homebrew/share/cmake/Modules/CMakeSystem.cmake.in /opt/homebrew/share/cmake/Modules/CMakeSystemSpecificInformation.cmake /opt/homebrew/share/cmake/Modules/CMakeSystemSpecificInitialize.cmake /opt/homebrew/share/cmake/Modules/CMakeTestASMCompiler.cmake /opt/homebrew/share/cmake/Modules/CMakeTestCCompiler.cmake /opt/homebrew/share/cmake/Modules/CMakeTestCXXCompiler.cmake /opt/homebrew/share/cmake/Modules/CMakeTestCompilerCommon.cmake /opt/homebrew/share/cmake/Modules/Compiler/ADSP-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/ARMCC-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/ARMClang-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/AppleClang-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/Borland-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/Bruce-C-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/CMakeCommonCompilerMacros.cmake /opt/homebrew/share/cmake/Modules/Compiler/Clang-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/Clang-DetermineCompilerInternal.cmake /opt/homebrew/share/cmake/Modules/Compiler/Compaq-C-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/Compaq-CXX-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/Cray-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/CrayClang-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/Embarcadero-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/Fujitsu-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/FujitsuClang-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/GHS-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/GNU-ASM.cmake /opt/homebrew/share/cmake/Modules/Compiler/GNU-C-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/GNU-C.cmake /opt/homebrew/share/cmake/Modules/Compiler/GNU-CXX-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/GNU-CXX.cmake /opt/homebrew/share/cmake/Modules/Compiler/GNU-FindBinUtils.cmake /opt/homebrew/share/cmake/Modules/Compiler/GNU.cmake /opt/homebrew/share/cmake/Modules/Compiler/HP-C-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/HP-CXX-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/IAR-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/IBMCPP-C-DetermineVersionInternal.cmake /opt/homebrew/share/cmake/Modules/Compiler/IBMCPP-CXX-DetermineVersionInternal.cmake /opt/homebrew/share/cmake/Modules/Compiler/IBMClang-C-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/IBMClang-CXX-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/Intel-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/IntelLLVM-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/LCC-C-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/LCC-CXX-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/MSVC-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/NVHPC-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/NVIDIA-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/OpenWatcom-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/OrangeC-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/PGI-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/PathScale-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/SCO-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/SDCC-C-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/SunPro-C-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/SunPro-CXX-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/TI-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/TIClang-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/Tasking-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/TinyCC-C-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/VisualAge-C-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/VisualAge-CXX-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/Watcom-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/XL-C-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/XL-CXX-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/XLClang-C-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/XLClang-CXX-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/zOS-C-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/zOS-CXX-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Internal/CMakeASMLinkerInformation.cmake /opt/homebrew/share/cmake/Modules/Internal/CMakeCLinkerInformation.cmake /opt/homebrew/share/cmake/Modules/Internal/CMakeCXXLinkerInformation.cmake /opt/homebrew/share/cmake/Modules/Internal/CMakeCommonLinkerInformation.cmake /opt/homebrew/share/cmake/Modules/Internal/CMakeDetermineLinkerId.cmake /opt/homebrew/share/cmake/Modules/Internal/FeatureTesting.cmake /opt/homebrew/share/cmake/Modules/Platform/Generic.cmake CMakeCache.txt CMakeFiles/3.31.5/CMakeASMCompiler.cmake CMakeFiles/3.31.5/CMakeCCompiler.cmake CMakeFiles/3.31.5/CMakeCXXCompiler.cmake CMakeFiles/3.31.5/CMakeSystem.cmake CMakeLists.txt cmake/gcc-arm-none-eabi.cmake cmake/vscode_generated.cmake
+build build.ninja: RERUN_CMAKE | /opt/homebrew/share/cmake/Modules/CMakeASMCompiler.cmake.in /opt/homebrew/share/cmake/Modules/CMakeASMInformation.cmake /opt/homebrew/share/cmake/Modules/CMakeCCompiler.cmake.in /opt/homebrew/share/cmake/Modules/CMakeCInformation.cmake /opt/homebrew/share/cmake/Modules/CMakeCXXCompiler.cmake.in /opt/homebrew/share/cmake/Modules/CMakeCXXInformation.cmake /opt/homebrew/share/cmake/Modules/CMakeCommonLanguageInclude.cmake /opt/homebrew/share/cmake/Modules/CMakeCompilerIdDetection.cmake /opt/homebrew/share/cmake/Modules/CMakeDetermineASMCompiler.cmake /opt/homebrew/share/cmake/Modules/CMakeDetermineCCompiler.cmake /opt/homebrew/share/cmake/Modules/CMakeDetermineCXXCompiler.cmake /opt/homebrew/share/cmake/Modules/CMakeDetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/CMakeDetermineCompilerId.cmake /opt/homebrew/share/cmake/Modules/CMakeDetermineSystem.cmake /opt/homebrew/share/cmake/Modules/CMakeFindBinUtils.cmake /opt/homebrew/share/cmake/Modules/CMakeGenericSystem.cmake /opt/homebrew/share/cmake/Modules/CMakeInitializeConfigs.cmake /opt/homebrew/share/cmake/Modules/CMakeLanguageInformation.cmake /opt/homebrew/share/cmake/Modules/CMakeNinjaFindMake.cmake /opt/homebrew/share/cmake/Modules/CMakeSystem.cmake.in /opt/homebrew/share/cmake/Modules/CMakeSystemSpecificInformation.cmake /opt/homebrew/share/cmake/Modules/CMakeSystemSpecificInitialize.cmake /opt/homebrew/share/cmake/Modules/CMakeTestASMCompiler.cmake /opt/homebrew/share/cmake/Modules/CMakeTestCCompiler.cmake /opt/homebrew/share/cmake/Modules/CMakeTestCXXCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/ADSP-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/ARMCC-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/ARMClang-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/AppleClang-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/Borland-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/Bruce-C-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/CMakeCommonCompilerMacros.cmake /opt/homebrew/share/cmake/Modules/Compiler/Clang-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/Clang-DetermineCompilerInternal.cmake /opt/homebrew/share/cmake/Modules/Compiler/Compaq-C-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/Compaq-CXX-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/Cray-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/CrayClang-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/Embarcadero-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/Fujitsu-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/FujitsuClang-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/GHS-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/GNU-ASM.cmake /opt/homebrew/share/cmake/Modules/Compiler/GNU-C-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/GNU-C.cmake /opt/homebrew/share/cmake/Modules/Compiler/GNU-CXX-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/GNU-CXX.cmake /opt/homebrew/share/cmake/Modules/Compiler/GNU-FindBinUtils.cmake /opt/homebrew/share/cmake/Modules/Compiler/GNU.cmake /opt/homebrew/share/cmake/Modules/Compiler/HP-C-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/HP-CXX-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/IAR-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/IBMCPP-C-DetermineVersionInternal.cmake /opt/homebrew/share/cmake/Modules/Compiler/IBMCPP-CXX-DetermineVersionInternal.cmake /opt/homebrew/share/cmake/Modules/Compiler/IBMClang-C-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/IBMClang-CXX-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/Intel-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/IntelLLVM-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/LCC-C-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/LCC-CXX-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/MSVC-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/NVHPC-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/NVIDIA-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/OpenWatcom-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/OrangeC-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/PGI-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/PathScale-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/SCO-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/SDCC-C-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/SunPro-C-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/SunPro-CXX-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/TI-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/TIClang-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/Tasking-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/TinyCC-C-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/VisualAge-C-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/VisualAge-CXX-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/Watcom-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/XL-C-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/XL-CXX-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/XLClang-C-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/XLClang-CXX-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/zOS-C-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/zOS-CXX-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Internal/CMakeASMLinkerInformation.cmake /opt/homebrew/share/cmake/Modules/Internal/CMakeCLinkerInformation.cmake /opt/homebrew/share/cmake/Modules/Internal/CMakeCXXLinkerInformation.cmake /opt/homebrew/share/cmake/Modules/Internal/CMakeCommonLinkerInformation.cmake /opt/homebrew/share/cmake/Modules/Platform/Generic.cmake CMakeCache.txt CMakeFiles/3.31.5/CMakeASMCompiler.cmake CMakeFiles/3.31.5/CMakeCCompiler.cmake CMakeFiles/3.31.5/CMakeCXXCompiler.cmake CMakeFiles/3.31.5/CMakeSystem.cmake CMakeLists.txt cmake/gcc-arm-none-eabi.cmake cmake/stm32cubemx/CMakeLists.txt
   pool = console
 
 
 #############################################
 # A missing CMake input file is not an error.
 
-build /opt/homebrew/share/cmake/Modules/CMakeASMCompiler.cmake.in /opt/homebrew/share/cmake/Modules/CMakeASMInformation.cmake /opt/homebrew/share/cmake/Modules/CMakeCCompiler.cmake.in /opt/homebrew/share/cmake/Modules/CMakeCCompilerABI.c /opt/homebrew/share/cmake/Modules/CMakeCInformation.cmake /opt/homebrew/share/cmake/Modules/CMakeCXXCompiler.cmake.in /opt/homebrew/share/cmake/Modules/CMakeCXXCompilerABI.cpp /opt/homebrew/share/cmake/Modules/CMakeCXXInformation.cmake /opt/homebrew/share/cmake/Modules/CMakeCommonLanguageInclude.cmake /opt/homebrew/share/cmake/Modules/CMakeCompilerIdDetection.cmake /opt/homebrew/share/cmake/Modules/CMakeDetermineASMCompiler.cmake /opt/homebrew/share/cmake/Modules/CMakeDetermineCCompiler.cmake /opt/homebrew/share/cmake/Modules/CMakeDetermineCXXCompiler.cmake /opt/homebrew/share/cmake/Modules/CMakeDetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/CMakeDetermineCompilerABI.cmake /opt/homebrew/share/cmake/Modules/CMakeDetermineCompilerId.cmake /opt/homebrew/share/cmake/Modules/CMakeDetermineCompilerSupport.cmake /opt/homebrew/share/cmake/Modules/CMakeDetermineSystem.cmake /opt/homebrew/share/cmake/Modules/CMakeFindBinUtils.cmake /opt/homebrew/share/cmake/Modules/CMakeGenericSystem.cmake /opt/homebrew/share/cmake/Modules/CMakeInitializeConfigs.cmake /opt/homebrew/share/cmake/Modules/CMakeLanguageInformation.cmake /opt/homebrew/share/cmake/Modules/CMakeNinjaFindMake.cmake /opt/homebrew/share/cmake/Modules/CMakeParseImplicitIncludeInfo.cmake /opt/homebrew/share/cmake/Modules/CMakeParseImplicitLinkInfo.cmake /opt/homebrew/share/cmake/Modules/CMakeParseLibraryArchitecture.cmake /opt/homebrew/share/cmake/Modules/CMakeSystem.cmake.in /opt/homebrew/share/cmake/Modules/CMakeSystemSpecificInformation.cmake /opt/homebrew/share/cmake/Modules/CMakeSystemSpecificInitialize.cmake /opt/homebrew/share/cmake/Modules/CMakeTestASMCompiler.cmake /opt/homebrew/share/cmake/Modules/CMakeTestCCompiler.cmake /opt/homebrew/share/cmake/Modules/CMakeTestCXXCompiler.cmake /opt/homebrew/share/cmake/Modules/CMakeTestCompilerCommon.cmake /opt/homebrew/share/cmake/Modules/Compiler/ADSP-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/ARMCC-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/ARMClang-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/AppleClang-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/Borland-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/Bruce-C-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/CMakeCommonCompilerMacros.cmake /opt/homebrew/share/cmake/Modules/Compiler/Clang-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/Clang-DetermineCompilerInternal.cmake /opt/homebrew/share/cmake/Modules/Compiler/Compaq-C-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/Compaq-CXX-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/Cray-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/CrayClang-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/Embarcadero-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/Fujitsu-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/FujitsuClang-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/GHS-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/GNU-ASM.cmake /opt/homebrew/share/cmake/Modules/Compiler/GNU-C-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/GNU-C.cmake /opt/homebrew/share/cmake/Modules/Compiler/GNU-CXX-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/GNU-CXX.cmake /opt/homebrew/share/cmake/Modules/Compiler/GNU-FindBinUtils.cmake /opt/homebrew/share/cmake/Modules/Compiler/GNU.cmake /opt/homebrew/share/cmake/Modules/Compiler/HP-C-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/HP-CXX-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/IAR-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/IBMCPP-C-DetermineVersionInternal.cmake /opt/homebrew/share/cmake/Modules/Compiler/IBMCPP-CXX-DetermineVersionInternal.cmake /opt/homebrew/share/cmake/Modules/Compiler/IBMClang-C-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/IBMClang-CXX-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/Intel-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/IntelLLVM-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/LCC-C-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/LCC-CXX-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/MSVC-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/NVHPC-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/NVIDIA-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/OpenWatcom-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/OrangeC-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/PGI-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/PathScale-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/SCO-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/SDCC-C-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/SunPro-C-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/SunPro-CXX-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/TI-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/TIClang-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/Tasking-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/TinyCC-C-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/VisualAge-C-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/VisualAge-CXX-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/Watcom-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/XL-C-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/XL-CXX-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/XLClang-C-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/XLClang-CXX-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/zOS-C-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/zOS-CXX-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Internal/CMakeASMLinkerInformation.cmake /opt/homebrew/share/cmake/Modules/Internal/CMakeCLinkerInformation.cmake /opt/homebrew/share/cmake/Modules/Internal/CMakeCXXLinkerInformation.cmake /opt/homebrew/share/cmake/Modules/Internal/CMakeCommonLinkerInformation.cmake /opt/homebrew/share/cmake/Modules/Internal/CMakeDetermineLinkerId.cmake /opt/homebrew/share/cmake/Modules/Internal/FeatureTesting.cmake /opt/homebrew/share/cmake/Modules/Platform/Generic.cmake CMakeCache.txt CMakeFiles/3.31.5/CMakeASMCompiler.cmake CMakeFiles/3.31.5/CMakeCCompiler.cmake CMakeFiles/3.31.5/CMakeCXXCompiler.cmake CMakeFiles/3.31.5/CMakeSystem.cmake CMakeLists.txt cmake/gcc-arm-none-eabi.cmake cmake/vscode_generated.cmake: phony
+build /opt/homebrew/share/cmake/Modules/CMakeASMCompiler.cmake.in /opt/homebrew/share/cmake/Modules/CMakeASMInformation.cmake /opt/homebrew/share/cmake/Modules/CMakeCCompiler.cmake.in /opt/homebrew/share/cmake/Modules/CMakeCInformation.cmake /opt/homebrew/share/cmake/Modules/CMakeCXXCompiler.cmake.in /opt/homebrew/share/cmake/Modules/CMakeCXXInformation.cmake /opt/homebrew/share/cmake/Modules/CMakeCommonLanguageInclude.cmake /opt/homebrew/share/cmake/Modules/CMakeCompilerIdDetection.cmake /opt/homebrew/share/cmake/Modules/CMakeDetermineASMCompiler.cmake /opt/homebrew/share/cmake/Modules/CMakeDetermineCCompiler.cmake /opt/homebrew/share/cmake/Modules/CMakeDetermineCXXCompiler.cmake /opt/homebrew/share/cmake/Modules/CMakeDetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/CMakeDetermineCompilerId.cmake /opt/homebrew/share/cmake/Modules/CMakeDetermineSystem.cmake /opt/homebrew/share/cmake/Modules/CMakeFindBinUtils.cmake /opt/homebrew/share/cmake/Modules/CMakeGenericSystem.cmake /opt/homebrew/share/cmake/Modules/CMakeInitializeConfigs.cmake /opt/homebrew/share/cmake/Modules/CMakeLanguageInformation.cmake /opt/homebrew/share/cmake/Modules/CMakeNinjaFindMake.cmake /opt/homebrew/share/cmake/Modules/CMakeSystem.cmake.in /opt/homebrew/share/cmake/Modules/CMakeSystemSpecificInformation.cmake /opt/homebrew/share/cmake/Modules/CMakeSystemSpecificInitialize.cmake /opt/homebrew/share/cmake/Modules/CMakeTestASMCompiler.cmake /opt/homebrew/share/cmake/Modules/CMakeTestCCompiler.cmake /opt/homebrew/share/cmake/Modules/CMakeTestCXXCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/ADSP-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/ARMCC-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/ARMClang-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/AppleClang-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/Borland-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/Bruce-C-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/CMakeCommonCompilerMacros.cmake /opt/homebrew/share/cmake/Modules/Compiler/Clang-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/Clang-DetermineCompilerInternal.cmake /opt/homebrew/share/cmake/Modules/Compiler/Compaq-C-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/Compaq-CXX-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/Cray-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/CrayClang-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/Embarcadero-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/Fujitsu-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/FujitsuClang-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/GHS-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/GNU-ASM.cmake /opt/homebrew/share/cmake/Modules/Compiler/GNU-C-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/GNU-C.cmake /opt/homebrew/share/cmake/Modules/Compiler/GNU-CXX-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/GNU-CXX.cmake /opt/homebrew/share/cmake/Modules/Compiler/GNU-FindBinUtils.cmake /opt/homebrew/share/cmake/Modules/Compiler/GNU.cmake /opt/homebrew/share/cmake/Modules/Compiler/HP-C-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/HP-CXX-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/IAR-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/IBMCPP-C-DetermineVersionInternal.cmake /opt/homebrew/share/cmake/Modules/Compiler/IBMCPP-CXX-DetermineVersionInternal.cmake /opt/homebrew/share/cmake/Modules/Compiler/IBMClang-C-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/IBMClang-CXX-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/Intel-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/IntelLLVM-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/LCC-C-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/LCC-CXX-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/MSVC-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/NVHPC-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/NVIDIA-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/OpenWatcom-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/OrangeC-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/PGI-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/PathScale-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/SCO-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/SDCC-C-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/SunPro-C-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/SunPro-CXX-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/TI-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/TIClang-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/Tasking-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/TinyCC-C-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/VisualAge-C-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/VisualAge-CXX-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/Watcom-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/XL-C-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/XL-CXX-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/XLClang-C-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/XLClang-CXX-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/zOS-C-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Compiler/zOS-CXX-DetermineCompiler.cmake /opt/homebrew/share/cmake/Modules/Internal/CMakeASMLinkerInformation.cmake /opt/homebrew/share/cmake/Modules/Internal/CMakeCLinkerInformation.cmake /opt/homebrew/share/cmake/Modules/Internal/CMakeCXXLinkerInformation.cmake /opt/homebrew/share/cmake/Modules/Internal/CMakeCommonLinkerInformation.cmake /opt/homebrew/share/cmake/Modules/Platform/Generic.cmake CMakeCache.txt CMakeFiles/3.31.5/CMakeASMCompiler.cmake CMakeFiles/3.31.5/CMakeCCompiler.cmake CMakeFiles/3.31.5/CMakeCXXCompiler.cmake CMakeFiles/3.31.5/CMakeSystem.cmake CMakeLists.txt cmake/gcc-arm-none-eabi.cmake cmake/stm32cubemx/CMakeLists.txt: phony
 
 
 #############################################
