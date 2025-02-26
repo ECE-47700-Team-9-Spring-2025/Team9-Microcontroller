@@ -95,6 +95,9 @@ target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE
     # Configuration specific
     $<$<CONFIG:Debug>:DEBUG>
     $<$<CONFIG:Release>: >
+
+    USE_HAL_TIM_REGISTER_CALLBACKS=1
+    USE_HAL_RTC_REGISTER_CALLBACKS=1
 )
 
 # Add linked libraries
