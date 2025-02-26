@@ -26,6 +26,8 @@
 #include <stdio.h>
 #include <stdarg.h>
 #include <string.h>
+#include <stdlib.h>
+#include <math.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -56,16 +58,24 @@ TIM_HandleTypeDef htim4;
 
 UART_HandleTypeDef huart2;
 UART_HandleTypeDef huart6;
+DMA_HandleTypeDef hdma_usart6_rx;
 
 /* USER CODE BEGIN PV */
 sr04_t sr04;
 sr04_t sr04_tim4;
 GPS_Data gps_data;
+
+// DMA buffer for UART reception
+#define UART_RX_BUFFER_SIZE 512
+uint8_t uartRxBuffer[UART_RX_BUFFER_SIZE];
+volatile uint16_t rxHead = 0;
+volatile uint16_t searchPos = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
+static void MX_DMA_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_RTC_Init(void);
 static void MX_TIM1_Init(void);
@@ -108,30 +118,87 @@ bool readUntilNewline(char *buffer, size_t maxSize) {
     char ch;
     bool startFound = false;
     
+    // Clear buffer first
+    memset(buffer, 0, maxSize);
+    
     while (idx < (maxSize - 1)) {
+        // Check for timeout - 2 seconds should be enough for one complete sentence
         if ((HAL_GetTick() - startTick) > 2000) {
-            printToConsole("Timeout after %lu ms\r\n", (HAL_GetTick() - startTick));
+            if (idx > 0) {
+                printToConsole("Timeout waiting for complete sentence after %d chars\r\n", idx);
+            }
             break;
         }
         
         HAL_StatusTypeDef status = HAL_UART_Receive(&huart6, (uint8_t*)&ch, 1, 100);
+        
         if (status == HAL_OK) {
+            // Debug - uncomment if needed
+            // printToConsole("%c", ch);
+            
+            // If we find the start character ($), reset buffer and start collecting
             if (ch == '$') {
                 startFound = true;
                 idx = 0;
+                buffer[idx++] = ch;
+                continue;
             }
             
+            // Only add characters if we've found the start
             if (startFound) {
                 buffer[idx++] = ch;
-                if (ch == '\n' && idx > 1 && buffer[idx-2] == '\r') {
+                
+                // Check for complete NMEA sentence: CR+LF ending
+                if (idx >= 2 && ch == '\n' && buffer[idx-2] == '\r') {
                     buffer[idx] = '\0';
                     return true;
                 }
+                
+                // Alternative check: we found a complete sentence with checksum
+                // Some devices might not properly terminate with CR+LF
+                if (idx >= 5 && buffer[idx-3] == '*') {  // Found checksum marker
+                    // Allow 2 more chars for the checksum itself
+                    if (idx >= (uint32_t)(buffer[idx-3] + 3)) {
+                        // Check if next char is CR or LF - if so, we're done
+                        status = HAL_UART_Receive(&huart6, (uint8_t*)&ch, 1, 10);
+                        if (status == HAL_OK) {
+                            if (ch == '\r' || ch == '\n') {
+                                buffer[idx++] = ch;
+                                // Get the matching LF if we found CR
+                                if (ch == '\r') {
+                                    status = HAL_UART_Receive(&huart6, (uint8_t*)&ch, 1, 10);
+                                    if (status == HAL_OK && ch == '\n') {
+                                        buffer[idx++] = ch;
+                                    }
+                                }
+                                buffer[idx] = '\0';
+                                return true;
+                            } else {
+                                // Not CR/LF, add to buffer and continue
+                                buffer[idx++] = ch;
+                            }
+                        } else {
+                            // No more data but we have a complete sentence with checksum
+                            buffer[idx] = '\0';
+                            return true;
+                        }
+                    }
+                }
             }
+        } else if (status == HAL_TIMEOUT && startFound && idx > 5) {
+            // We've started a sentence and got something meaningful
+            buffer[idx] = '\0';
+            return true;
         }
     }
     
-    buffer[idx] = '\0';
+    // If we've collected a valid-looking sentence but hit the buffer limit
+    if (startFound && idx > 0) {
+        buffer[idx] = '\0';
+        return true;
+    }
+    
+    buffer[0] = '\0';
     return false;
 }
 
@@ -171,7 +238,8 @@ bool printCurrentGpsOutput(void) {
             return false;
         }
         
-        const char* buffer = "$GNRMC,201850.00,A,4025.69979,N,08654.69118,W,0.256,,240225,08654.69118,W,0.256,,240225,,,A*73";
+        // Test buffer
+        // const char* buffer = "$GNRMC,201850.00,A,4025.69979,N,08654.69118,W,0.256,,240225,08654.69118,W,0.256,,240225,,,A*73";
         
         // Parse message type
         if (strstr(buffer, "$GNRMC")) {
@@ -298,67 +366,116 @@ bool printCurrentGpsOutput(void) {
     }
 }
 
-void sendUBXCommand(const char* cmd, size_t len) {
-    HAL_UART_Transmit(&huart6, (uint8_t*)cmd, len, 1000);
-    HAL_Delay(100); // Wait for command to process
+// void sendUBXCommand(const char* cmd, size_t len) {
+//     HAL_UART_Transmit(&huart6, (uint8_t*)cmd, len, 1000);
+//     HAL_Delay(100); // Wait for command to process
+// }
+
+// void initGPS(void) {
+//   return; 
+//     printToConsole("Initializing GPS...\r\n");
+    
+//     // First, flush any pending data
+//     HAL_Delay(100);
+//     uint8_t dummy;
+//     int flushed = 0;
+//     while (HAL_UART_Receive(&huart6, &dummy, 1, 1) == HAL_OK) {
+//         flushed++;
+//     }
+//     printToConsole("Flushed %d bytes\r\n", flushed);
+    
+//     // Reset to factory defaults
+//     const char reset[] = "$PUBX,41,1,0007,0003,9600,0*10\r\n";
+//     sendUBXCommand(reset, strlen(reset));
+//     HAL_Delay(1000);
+    
+//     // Try to read any response
+//     char buffer[128];
+//     if (readUntilNewline(buffer, sizeof(buffer))) {
+//         printToConsole("Reset response: %s\r\n", buffer);
+//     } else {
+//         printToConsole("No response to reset command\r\n");
+//     }
+    
+//     // Disable all NMEA messages first
+//     const char disableAll[] = "$PUBX,40,GLL,0,0,0,0,0,0*5C\r\n"
+//                              "$PUBX,40,GSA,0,0,0,0,0,0*4E\r\n"
+//                              "$PUBX,40,GSV,0,0,0,0,0,0*59\r\n"
+//                              "$PUBX,40,VTG,0,0,0,0,0,0*5E\r\n";
+//     sendUBXCommand(disableAll, strlen(disableAll));
+//     HAL_Delay(500);
+    
+//     // Enable only the messages we want
+//     const char enableRMC[] = "$PUBX,40,RMC,0,1,0,0,0,0*46\r\n";
+//     sendUBXCommand(enableRMC, strlen(enableRMC));
+//     HAL_Delay(100);
+    
+//     const char enableGGA[] = "$PUBX,40,GGA,0,1,0,0,0,0*5B\r\n";
+//     sendUBXCommand(enableGGA, strlen(enableGGA));
+//     HAL_Delay(100);
+
+//     // Enable GSV messages to see satellite info
+//     const char enableGSV[] = "$PUBX,40,GSV,0,1,0,0,0,0*59\r\n";
+//     sendUBXCommand(enableGSV, strlen(enableGSV));
+//     HAL_Delay(100);
+
+//     // Configure update rate to 1Hz for stability
+//     const char setRate[] = "$PUBX,40,ZDA,0,1,0,0,0,0*44\r\n";
+//     sendUBXCommand(setRate, strlen(setRate));
+//     HAL_Delay(100);
+    
+//     printToConsole("GPS Initialization complete\r\n");
+//     HAL_Delay(1000);  // Give it time to start sending data
+// }
+
+// Function to extract NMEA sentences from DMA buffer
+bool getNMEASentence(char *buffer, size_t maxSize) {
+    uint16_t startPos = UINT16_MAX;
+    uint16_t endPos = UINT16_MAX;
+    uint16_t currentHead = rxHead; // Capture current position
+    
+    // Search from last position to current head
+    uint16_t pos = searchPos;
+    while (pos != currentHead) {
+        if (uartRxBuffer[pos] == '$' && startPos == UINT16_MAX) {
+            startPos = pos;
+        } else if (uartRxBuffer[pos] == '\n' && startPos != UINT16_MAX) {
+            endPos = pos;
+            break;
+        }
+        pos = (pos + 1) % UART_RX_BUFFER_SIZE;
+    }
+    
+    // If complete sentence found
+    if (startPos != UINT16_MAX && endPos != UINT16_MAX) {
+        uint16_t length = 0;
+        pos = startPos;
+        
+        // Copy sentence to output buffer
+        while (pos != ((endPos + 1) % UART_RX_BUFFER_SIZE) && length < maxSize - 1) {
+            buffer[length++] = uartRxBuffer[pos];
+            pos = (pos + 1) % UART_RX_BUFFER_SIZE;
+        }
+        
+        buffer[length] = '\0';
+        searchPos = (endPos + 1) % UART_RX_BUFFER_SIZE; // Update search position
+        return true;
+    }
+    
+    return false;
 }
 
-void initGPS(void) {
-  return; 
-    printToConsole("Initializing GPS...\r\n");
-    
-    // First, flush any pending data
-    HAL_Delay(100);
-    uint8_t dummy;
-    int flushed = 0;
-    while (HAL_UART_Receive(&huart6, &dummy, 1, 1) == HAL_OK) {
-        flushed++;
+// UART reception complete callback
+void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
+    if (huart->Instance == USART6) {
+        rxHead = Size;
+        
+        // Restart DMA reception in IDLE mode
+        HAL_UARTEx_ReceiveToIdle_DMA(&huart6, uartRxBuffer, UART_RX_BUFFER_SIZE);
+        __HAL_DMA_DISABLE_IT(huart6.hdmarx, DMA_IT_HT); // Disable Half Transfer interrupt
     }
-    printToConsole("Flushed %d bytes\r\n", flushed);
-    
-    // Reset to factory defaults
-    const char reset[] = "$PUBX,41,1,0007,0003,9600,0*10\r\n";
-    sendUBXCommand(reset, strlen(reset));
-    HAL_Delay(1000);
-    
-    // Try to read any response
-    char buffer[128];
-    if (readUntilNewline(buffer, sizeof(buffer))) {
-        printToConsole("Reset response: %s\r\n", buffer);
-    } else {
-        printToConsole("No response to reset command\r\n");
-    }
-    
-    // Disable all NMEA messages first
-    const char disableAll[] = "$PUBX,40,GLL,0,0,0,0,0,0*5C\r\n"
-                             "$PUBX,40,GSA,0,0,0,0,0,0*4E\r\n"
-                             "$PUBX,40,GSV,0,0,0,0,0,0*59\r\n"
-                             "$PUBX,40,VTG,0,0,0,0,0,0*5E\r\n";
-    sendUBXCommand(disableAll, strlen(disableAll));
-    HAL_Delay(500);
-    
-    // Enable only the messages we want
-    const char enableRMC[] = "$PUBX,40,RMC,0,1,0,0,0,0*46\r\n";
-    sendUBXCommand(enableRMC, strlen(enableRMC));
-    HAL_Delay(100);
-    
-    const char enableGGA[] = "$PUBX,40,GGA,0,1,0,0,0,0*5B\r\n";
-    sendUBXCommand(enableGGA, strlen(enableGGA));
-    HAL_Delay(100);
-
-    // Enable GSV messages to see satellite info
-    const char enableGSV[] = "$PUBX,40,GSV,0,1,0,0,0,0*59\r\n";
-    sendUBXCommand(enableGSV, strlen(enableGSV));
-    HAL_Delay(100);
-
-    // Configure update rate to 1Hz for stability
-    const char setRate[] = "$PUBX,40,ZDA,0,1,0,0,0,0*44\r\n";
-    sendUBXCommand(setRate, strlen(setRate));
-    HAL_Delay(100);
-    
-    printToConsole("GPS Initialization complete\r\n");
-    HAL_Delay(1000);  // Give it time to start sending data
 }
+
 /* USER CODE END 0 */
 
 /**
@@ -390,6 +507,7 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
+  MX_DMA_Init();
   MX_USART2_UART_Init();
   MX_RTC_Init();
   MX_TIM1_Init();
@@ -398,20 +516,12 @@ int main(void)
   /* USER CODE BEGIN 2 */
 
   // Initialize GPS
-  initGPS();
+  //initGPS();
   
-  sr04.trig_port = GPIOA;
-  sr04.trig_pin = GPIO_PIN_9;
-  sr04.echo_htim = &htim1;
-  sr04.echo_channel = TIM_CHANNEL_1;
-  sr04_init(&sr04);
+  // Initialize DMA for UART6 reception
+  HAL_UARTEx_ReceiveToIdle_DMA(&huart6, uartRxBuffer, UART_RX_BUFFER_SIZE);
+  __HAL_DMA_DISABLE_IT(huart6.hdmarx, DMA_IT_HT); // Disable Half Transfer interrupt
 
-  // Trying to get two sensors working
-  sr04_tim4.trig_port = GPIOB;
-  sr04_tim4.trig_pin = GPIO_PIN_5;
-  sr04_tim4.echo_htim = &htim4;
-  sr04_tim4.echo_channel = TIM_CHANNEL_4;
-  sr04_init(&sr04_tim4);
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -421,39 +531,35 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-    printToConsole("--------------------------------\r\n\n");
-
-    // Print the distance using UART
-    if (false) {
-      sr04_trigger(&sr04);
-      sr04_trigger(&sr04_tim4);
-
-      // Print the distance using UART
-      printToConsole("Ultrasonic 1: %lu mm\r\n", sr04.distance); // @suppress("Float formatting support")
-      printToConsole("Ultrasonic 2: %lu mm\r\n", sr04_tim4.distance); // @suppress("Float formatting support")
-    }
-
-
-    // Print the GPS output
-    if (true) {
-      printToConsole("\r\n=== New GPS Reading ===\r\n");
-      
-      // Try multiple times to get a valid sentence
-      bool success = false;
-      for(int attempts = 0; attempts < 3 && !success; attempts++) {
-          if (attempts > 0) {
-              printToConsole("Retry attempt %d\r\n", attempts);
-          }
-          success = printCurrentGpsOutput();
+    // Process GPS NMEA sentences from DMA buffer
+    char nmeaBuffer[256];
+    if (getNMEASentence(nmeaBuffer, sizeof(nmeaBuffer))) {
+      // Process the NMEA sentence
+      if (strstr(nmeaBuffer, "$GNRMC")) {
+        printToConsole("Message Type: RMC (Position/Speed/Time)\r\n");
+        
+        if (M8Q_ParseGNRMC(nmeaBuffer, &gps_data)) {
+          // Your existing RMC handling code
+        } else {
+          printToConsole("ERROR: Failed to parse RMC message\r\n");
+          printToConsole("Raw: %s\r\n", nmeaBuffer);
+        }
+      } 
+      else if (strstr(nmeaBuffer, "$GNGGA")) {
+        printToConsole("Message Type: GGA (GPS Fix Data)\r\n");
+        // Your existing GGA handling code
       }
-      
-      if (!success) {
-          printToConsole("Failed after all attempts\r\n");
+      else if (strstr(nmeaBuffer, "$GNTXT")) {
+        GPS_Status status = parseGPSTXT(nmeaBuffer);
+        // Your existing TXT handling code
+      }
+      else {
+        printToConsole("Message Type: Other (%.*s)\r\n", 5, nmeaBuffer);
       }
     }
 
     // Wait for 500ms before triggering again
-    HAL_Delay(1000);
+    // HAL_Delay(1000);
   }
   /* USER CODE END 3 */
 }
@@ -720,6 +826,22 @@ static void MX_USART6_UART_Init(void)
   /* USER CODE BEGIN USART6_Init 2 */
 
   /* USER CODE END USART6_Init 2 */
+
+}
+
+/**
+  * Enable DMA controller clock
+  */
+static void MX_DMA_Init(void)
+{
+
+  /* DMA controller clock enable */
+  __HAL_RCC_DMA2_CLK_ENABLE();
+
+  /* DMA interrupt init */
+  /* DMA2_Stream1_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA2_Stream1_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA2_Stream1_IRQn);
 
 }
 

@@ -25,6 +25,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "m8q.h"
 static uint8_t rx_buf[20];
 static char* tx_1 = "AT";
 static char* tx_2 = "Hello World";
@@ -58,7 +59,12 @@ static char* tx_2 = "Hello World";
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
-
+typedef enum {
+    GPS_STATUS_INIT,
+    GPS_STATUS_OK,
+    GPS_STATUS_ERROR,
+    GPS_STATUS_NO_FIX
+} GPS_Status;
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
@@ -285,7 +291,216 @@ static void MX_SPI1_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+void decodeNMEASentence(const char *sentence) {
+    char buffer[128];
+    strncpy(buffer, sentence, sizeof(buffer));
+    buffer[sizeof(buffer)-1] = '\0';
+    
+    char *token = strtok(buffer, ",");
+    int fieldIndex = 0;
+    
+    while (token != NULL) {
+        printToConsole("Field %d: %s\r\n", fieldIndex, token);
+        token = strtok(NULL, ",");
+        fieldIndex++;
+    }
+}
 
+bool readUntilNewline(char *buffer, size_t maxSize) {
+    uint32_t startTick = HAL_GetTick();
+    uint32_t idx = 0;
+    char ch;
+    bool startFound = false;
+    
+    while (idx < (maxSize - 1)) {
+        if ((HAL_GetTick() - startTick) > 2000) {
+            printToConsole("Timeout after %lu ms\r\n", (HAL_GetTick() - startTick));
+            break;
+        }
+        
+        HAL_StatusTypeDef status = HAL_UART_Receive(&huart6, (uint8_t*)&ch, 1, 100);
+        if (status == HAL_OK) {
+            if (ch == '$') {
+                startFound = true;
+                idx = 0;
+            }
+            
+            if (startFound) {
+                buffer[idx++] = ch;
+                if (ch == '\n' && idx > 1 && buffer[idx-2] == '\r') {
+                    buffer[idx] = '\0';
+                    return true;
+                }
+            }
+        }
+    }
+    
+    buffer[idx] = '\0';
+    return false;
+}
+
+GPS_Status parseGPSTXT(const char* message) {
+    if (strstr(message, "ANTSTATUS=INIT")) {
+        return GPS_STATUS_INIT;
+    } else if (strstr(message, "ANTSTATUS=OK")) {
+        return GPS_STATUS_OK;
+    } else if (strstr(message, "ANTSTATUS=SHORT") || 
+               strstr(message, "ANTSTATUS=OPEN")) {
+        return GPS_STATUS_ERROR;
+    }
+    return GPS_STATUS_NO_FIX;
+}
+
+bool printCurrentGpsOutput(void) {
+    char buffer[256];
+    static GPS_Status lastStatus = GPS_STATUS_INIT;
+    static uint32_t noFixCount = 0;
+    static uint32_t lastDebugPrint = 0;
+    const uint32_t DEBUG_PRINT_INTERVAL = 1000; // Print debug every 1 second
+    
+    memset(buffer, 0, sizeof(buffer));
+    memset(&gps_data, 0, sizeof(GPS_Data));
+
+    if (readUntilNewline(buffer, sizeof(buffer))) {
+        // Debug message with timestamp
+        uint32_t currentTick = HAL_GetTick();
+        if (currentTick - lastDebugPrint >= DEBUG_PRINT_INTERVAL) {
+            printToConsole("\r\n=== GPS Debug [%lu ms] ===\r\n", currentTick);
+            lastDebugPrint = currentTick;
+        }
+
+        // Validate NMEA message format
+        if (buffer[0] != '$') {
+            printToConsole("ERROR: Invalid NMEA format\r\n");
+            return false;
+        }
+        
+        const char* buffer = "$GNRMC,201850.00,A,4025.69979,N,08654.69118,W,0.256,,240225,08654.69118,W,0.256,,240225,,,A*73";
+        
+        // Parse message type
+        if (strstr(buffer, "$GNRMC")) {
+            printToConsole("Message Type: RMC (Position/Speed/Time)\r\n");
+            
+            if (M8Q_ParseGNRMC(buffer, &gps_data)) {
+                if (!gps_data.fix_valid) {
+                    noFixCount++;
+                    printToConsole("Status: NO FIX (Waiting: %lu sec)\r\n", noFixCount);
+                    printToConsole("Time: %02d:%02d:%02d UTC\r\n", 
+                        gps_data.hours, 
+                        gps_data.minutes, 
+                        gps_data.seconds);
+                    printToConsole("Troubleshooting:\r\n");
+                    printToConsole("- Ensure clear view of sky\r\n");
+                    printToConsole("- Wait for satellite acquisition (can take 1-5 min)\r\n");
+                    printToConsole("- Check antenna connection\r\n");
+                } else {
+                    noFixCount = 0;
+                    printToConsole("\r\n=== GPS Location Update ===\r\n");
+                    printToConsole("Time: %02d:%02d:%02d UTC\r\n", 
+                        gps_data.hours, 
+                        gps_data.minutes, 
+                        gps_data.seconds);
+                    
+                    printToConsole("Date: %02d/%02d/%04d\r\n", 
+                        gps_data.day, 
+                        gps_data.month, 
+                        gps_data.year);
+                    
+                    // Convert coordinates to degrees and decimal minutes format
+                    int lat_deg = (int)gps_data.latitude;
+                    double lat_min = (gps_data.latitude - lat_deg) * 60;
+                    int lon_deg = (int)gps_data.longitude;
+                    double lon_min = (gps_data.longitude - lon_deg) * 60;
+                    
+                    printToConsole("Position:\r\n");
+                    printToConsole("  %d°%.4f' %c\r\n", 
+                        abs(lat_deg), fabs(lat_min), gps_data.lat_direction);
+                    printToConsole("  %d°%.4f' %c\r\n", 
+                        abs(lon_deg), fabs(lon_min), gps_data.lon_direction);
+                    
+                    if (gps_data.speed_knots > 0.5) { // Only show speed if moving
+                        printToConsole("Speed: %.1f km/h\r\n", 
+                            gps_data.speed_knots * 1.852); // Convert knots to km/h
+                        printToConsole("Heading: %.1f°\r\n", 
+                            gps_data.course);
+                    }
+                    
+                    printToConsole("=========================\r\n");
+                }
+            } else {
+                printToConsole("ERROR: Failed to parse RMC message\r\n");
+                printToConsole("Raw: %s\r\n", buffer);
+            }
+            return true;
+        } 
+        else if (strstr(buffer, "$GNGGA")) {
+            printToConsole("Message Type: GGA (GPS Fix Data)\r\n");
+            
+            // Parse GGA message fields
+            char *saveptr;
+            char *token = strtok_r(buffer, ",", &saveptr);
+            int field = 0;
+            
+            while (token != NULL) {
+                switch(field) {
+                    case 6: // Fix quality
+                        printToConsole("Fix Quality: ");
+                        switch(atoi(token)) {
+                            case 0: printToConsole("Invalid\r\n"); break;
+                            case 1: printToConsole("GPS Fix\r\n"); break;
+                            case 2: printToConsole("DGPS Fix\r\n"); break;
+                            default: printToConsole("Unknown (%s)\r\n", token); break;
+                        }
+                        break;
+                    case 7: // Satellites in use
+                        printToConsole("Satellites: %s in use\r\n", token);
+                        break;
+                    case 8: // HDOP
+                        {
+                            float hdop = atof(token);
+                            printToConsole("HDOP: %.1f ", hdop);
+                            if (hdop < 1.0) printToConsole("(Excellent)\r\n");
+                            else if (hdop < 2.0) printToConsole("(Good)\r\n");
+                            else if (hdop < 5.0) printToConsole("(Moderate)\r\n");
+                            else printToConsole("(Poor)\r\n");
+                        }
+                        break;
+                }
+                field++;
+                token = strtok_r(NULL, ",", &saveptr);
+            }
+            return true;
+        }
+        else if (strstr(buffer, "$GNTXT")) {
+            GPS_Status status = parseGPSTXT(buffer);
+            if (status != lastStatus) {
+                switch(status) {
+                    case GPS_STATUS_INIT:
+                        printToConsole("GPS Status: Initializing antenna\r\n");
+                        break;
+                    case GPS_STATUS_OK:
+                        printToConsole("GPS Status: Antenna OK, waiting for fix\r\n");
+                        break;
+                    case GPS_STATUS_ERROR:
+                        printToConsole("GPS Status: Antenna error detected!\r\n");
+                        break;
+                    default:
+                        break;
+                }
+                lastStatus = status;
+            }
+            printToConsole("GPS Info Message: %s", buffer);
+            return true;
+        }
+        else {
+            printToConsole("Message Type: Other (%.*s)\r\n", 5, buffer);
+            return true;
+        }
+    } else {
+        printToConsole("ERROR: Failed to read NMEA sentence\r\n");
+        return false;
+    }
+}
 /* USER CODE END 0 */
 
 /**
@@ -344,6 +559,24 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+    // Print the GPS output
+    if (true) {
+      // Try multiple times to get a valid sentence
+      bool success = false;
+      printToConsole("\r\n=== New GPS Reading ===\r\n");
+      for(int attempts = 0; attempts < 3 && !success; attempts++) {
+          if (attempts > 0) {
+              printToConsole("Retry attempt %d\r\n", attempts);
+          }
+          success = printCurrentGpsOutput();
+      }
+      if (!success) {
+          printToConsole("Failed after all attempts\r\n");
+      }
+    }
+
+    // Wait for 500ms before triggering again
+    HAL_Delay(1000);
     read_imu_data();
     HAL_Delay(1000);
   }
