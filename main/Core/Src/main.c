@@ -421,15 +421,124 @@ bool getNMEASentence(char *buffer, size_t maxSize) {
 }
 
 // UART reception complete callback
+// Replace your current HAL_UARTEx_RxEventCallback with this improved version
 void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
     if (huart->Instance == USART6) {
-        rxHead = (rxHead + Size) % UART_RX_BUFFER_SIZE;
+        // Debug output to confirm callback is working
+        // printToConsole("DMA received %d bytes\r\n", Size);
+        
+        // Calculate the new head position
+        uint16_t newHead = (rxHead + Size) % UART_RX_BUFFER_SIZE;
+        rxHead = newHead;
+        
+        // If searchPos is far behind, move it forward to avoid searching old data
+        if ((rxHead > searchPos && (rxHead - searchPos) > UART_RX_BUFFER_SIZE/2) ||
+            (rxHead < searchPos && (UART_RX_BUFFER_SIZE - searchPos + rxHead) > UART_RX_BUFFER_SIZE/2)) {
+            searchPos = (rxHead + UART_RX_BUFFER_SIZE - 100) % UART_RX_BUFFER_SIZE;
+            // printToConsole("Adjusted searchPos to %d\r\n", searchPos);
+        }
         
         // Restart DMA reception
-        HAL_UARTEx_ReceiveToIdle_DMA(&huart6, uartRxBuffer, UART_RX_BUFFER_SIZE);
-        __HAL_DMA_DISABLE_IT(huart6.hdmarx, DMA_IT_HT); // Disable Half Transfer interrupt
+        HAL_UARTEx_ReceiveToIdle_DMA(huart, uartRxBuffer, UART_RX_BUFFER_SIZE);
+        __HAL_DMA_DISABLE_IT(huart->hdmarx, DMA_IT_HT); // Disable Half Transfer interrupt
     }
 }
+
+// DEBUGGING CODE
+// Add this function to test USART6 reception
+void testUSART6Reception(void) {
+    printToConsole("\r\n=== USART6 Reception Test ===\r\n");
+    printToConsole("Listening for data on USART6 for 10 seconds...\r\n");
+    
+    // Variables for the test
+    uint8_t rxByte;
+    uint32_t bytesReceived = 0;
+    uint32_t startTime = HAL_GetTick();
+    uint32_t lastPrintTime = startTime;
+    uint8_t sampleData[32] = {0};
+    uint8_t sampleIndex = 0;
+    
+    // Turn on LED to indicate test is running
+    HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_SET);
+    
+    // Test for 10 seconds
+    while (HAL_GetTick() - startTime < 10000) {
+        // Try to receive a byte with short timeout
+        if (HAL_UART_Receive(&huart6, &rxByte, 1, 10) == HAL_OK) {
+            bytesReceived++;
+            
+            // Store some sample data (first 32 bytes)
+            if (sampleIndex < sizeof(sampleData)) {
+                sampleData[sampleIndex++] = rxByte;
+            }
+            
+            // Toggle LED on each byte received
+            HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
+        }
+        
+        // Print status every second
+        if (HAL_GetTick() - lastPrintTime >= 1000) {
+            printToConsole("Bytes received so far: %lu\r\n", bytesReceived);
+            lastPrintTime = HAL_GetTick();
+        }
+    }
+    
+    // Turn off LED
+    HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_RESET);
+    
+    // Print test results
+    printToConsole("\r\n=== Test Results ===\r\n");
+    printToConsole("Total bytes received: %lu\r\n", bytesReceived);
+    
+    if (bytesReceived > 0) {
+        // Print sample of received data in different formats
+        printToConsole("Sample data (ASCII): ");
+        for (uint8_t i = 0; i < sampleIndex; i++) {
+            // Print printable ASCII characters, or a dot for non-printable
+            if (sampleData[i] >= 32 && sampleData[i] <= 126) {
+                printToConsole("%c", sampleData[i]);
+            } else {
+                printToConsole(".");
+            }
+        }
+        printToConsole("\r\n");
+        
+        printToConsole("Sample data (HEX): ");
+        for (uint8_t i = 0; i < sampleIndex; i++) {
+            printToConsole("%02X ", sampleData[i]);
+            // Add newline every 16 bytes for readability
+            if ((i + 1) % 16 == 0 && i < sampleIndex - 1) {
+                printToConsole("\r\n                   ");
+            }
+        }
+        printToConsole("\r\n");
+        
+        // Check if data looks like NMEA sentences
+        bool containsDollarSign = false;
+        for (uint8_t i = 0; i < sampleIndex; i++) {
+            if (sampleData[i] == '$') {
+                containsDollarSign = true;
+                break;
+            }
+        }
+        
+        if (containsDollarSign) {
+            printToConsole("Data appears to contain NMEA sentences ($ character found)\r\n");
+        } else {
+            printToConsole("WARNING: No NMEA sentence markers ($) found in sample data\r\n");
+        }
+    } else {
+        printToConsole("No data received! Check connections and GPS module power\r\n");
+        printToConsole("Troubleshooting tips:\r\n");
+        printToConsole("1. Verify GPS module is powered (check voltage)\r\n");
+        printToConsole("2. Confirm GPS TX is connected to STM32 RX (PC7)\r\n");
+        printToConsole("3. Try different baud rate (current: %lu)\r\n", huart6.Init.BaudRate);
+        printToConsole("4. Check if GPS module needs initialization commands\r\n");
+    }
+    
+    printToConsole("=== Test Complete ===\r\n\r\n");
+}
+
 /* USER CODE END 0 */
 
 /**
@@ -470,16 +579,21 @@ int main(void)
   HAL_UARTEx_ReceiveToIdle_DMA(&huart6, uartRxBuffer, UART_RX_BUFFER_SIZE);
   __HAL_DMA_DISABLE_IT(huart6.hdmarx, DMA_IT_HT); // Disable Half Transfer interrupt
   printToConsole("DMA Initialized!\r\n");
+
+  // Test USART6 reception
+  // testUSART6Reception();
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-    printToConsole("Waiting for GPS data...\r\n");
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+    // For DEBUG:
+    // printToConsole("DMA buffer status: head=%d, search=%d\r\n", rxHead, searchPos);
+
     // Process GPS NMEA sentences from DMA buffer
     char nmeaBuffer[256];
     if (getNMEASentence(nmeaBuffer, sizeof(nmeaBuffer))) {
@@ -595,12 +709,13 @@ int main(void)
         else {
             printToConsole("Other Message Type: %.5s\r\n", nmeaBuffer);
         }
-    } else {
-        printToConsole("ERROR: Failed to read NMEA sentence\r\n");
-    }
+    } 
+    // else {
+    //     printToConsole("ERROR: Failed to read NMEA sentence\r\n");
+    // }
 
     // Optional: Add a small delay to prevent console flooding
-    HAL_Delay(1000);
+    HAL_Delay(10);
   }
   /* USER CODE END 3 */
 }
