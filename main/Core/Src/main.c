@@ -728,8 +728,8 @@ void read_imu_data(void) {
     gyro_z = (int16_t)((gyro_z_h << 8) | gyro_z_l);
     
     // Print the data
-    printToConsole("Accel: X=%d, Y=%d, Z=%d", accel_x, accel_y, accel_z);
-    printToConsole("Gyro: X=%d, Y=%d, Z=%d", gyro_x, gyro_y, gyro_z);
+    printToConsole("Accel: X=%d, Y=%d, Z=%d\r\n", accel_x, accel_y, accel_z);
+    printToConsole("Gyro: X=%d, Y=%d, Z=%d\r\n", gyro_x, gyro_y, gyro_z);
 }
 
 /* USER CODE END 0 */
