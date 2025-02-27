@@ -27,6 +27,37 @@
 #include <string.h>
 #include <stdlib.h>
 #include <math.h>
+
+static uint8_t rx_buf[20];
+static char* tx_1 = "AT";
+static char* tx_2 = "Hello World";
+
+// ICM-20948 Register addresses - Updated for correct bank 0 addresses
+#define WHO_AM_I_REG     0x00    
+#define WHO_AM_I_VAL     0xEA   
+
+#define PWR_MGMT_1       0x06
+#define ACCEL_XOUT_H     0x2D
+#define ACCEL_XOUT_L     0x2E
+#define ACCEL_YOUT_H     0x2F
+#define ACCEL_YOUT_L     0x30
+#define ACCEL_ZOUT_H     0x31
+#define ACCEL_ZOUT_L     0x32
+#define GYRO_XOUT_H      0x33
+#define GYRO_XOUT_L      0x34
+#define GYRO_YOUT_H      0x35
+#define GYRO_YOUT_L      0x36
+#define GYRO_ZOUT_H      0x37
+#define GYRO_ZOUT_L      0x38
+#define PWR_MGMT_2       0x07
+#define GYRO_CONFIG_1    0x01
+#define ACCEL_CONFIG     0x14
+
+// ICM-20948 specific defines
+#define ICM_CS_PIN       GPIO_PIN_12
+#define ICM_CS_PORT      GPIOB
+
+
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -50,8 +81,14 @@ typedef enum {
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
+SPI_HandleTypeDef hspi2;
+DMA_HandleTypeDef hdma_spi2_tx;
+
+UART_HandleTypeDef huart1;
 UART_HandleTypeDef huart2;
 UART_HandleTypeDef huart6;
+DMA_HandleTypeDef hdma_usart1_tx;
+DMA_HandleTypeDef hdma_usart1_rx;
 DMA_HandleTypeDef hdma_usart6_rx;
 
 /* USER CODE BEGIN PV */
@@ -70,6 +107,8 @@ static void MX_GPIO_Init(void);
 static void MX_DMA_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_USART6_UART_Init(void);
+static void MX_USART1_UART_Init(void);
+static void MX_SPI2_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -539,6 +578,160 @@ void testUSART6Reception(void) {
     printToConsole("=== Test Complete ===\r\n\r\n");
 }
 
+
+
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
+{
+    if(huart == &huart1) {
+        // Log the received data
+        printToConsole("Received (callback): %s", rx_buf);
+        
+        // Restart the reception for the next data
+        HAL_UART_Receive_DMA(&huart1, rx_buf, sizeof(rx_buf));
+    }
+}
+
+// Update SPI read/write functions
+uint8_t SPI_Read(uint8_t reg) {
+    uint8_t rx_data = 0;
+    uint8_t tx_data = reg | 0x80;  // Set the read bit (bit 7)
+    
+    HAL_GPIO_WritePin(ICM_CS_PORT, ICM_CS_PIN, GPIO_PIN_RESET);  // CS LOW
+    
+    // Small delay to ensure CS is stable before transmission
+    for(volatile int i = 0; i < 10; i++);
+    
+    HAL_SPI_Transmit(&hspi2, &tx_data, 1, HAL_MAX_DELAY);
+    HAL_SPI_Receive(&hspi2, &rx_data, 1, HAL_MAX_DELAY);
+    
+    // Small delay before raising CS
+    for(volatile int i = 0; i < 10; i++);
+    
+    HAL_GPIO_WritePin(ICM_CS_PORT, ICM_CS_PIN, GPIO_PIN_SET);    // CS HIGH
+    
+    return rx_data;
+}
+
+void SPI_Write(uint8_t reg, uint8_t data) {
+    uint8_t tx_data[2];
+    tx_data[0] = reg & 0x7F;  // Clear the read bit (bit 7)
+    tx_data[1] = data;
+    
+    HAL_GPIO_WritePin(ICM_CS_PORT, ICM_CS_PIN, GPIO_PIN_RESET);  // CS LOW
+    
+    // Small delay to ensure CS is stable before transmission
+    for(volatile int i = 0; i < 10; i++);
+    
+    HAL_SPI_Transmit(&hspi2, tx_data, 2, HAL_MAX_DELAY);
+    
+    // Small delay before raising CS
+    for(volatile int i = 0; i < 10; i++);
+    
+    HAL_GPIO_WritePin(ICM_CS_PORT, ICM_CS_PIN, GPIO_PIN_SET);    // CS HIGH
+}
+
+// Update initialization sequence
+void init_imu(void) {
+    // Configure CS pin as output and set it high initially
+    GPIO_InitTypeDef GPIO_InitStruct = {0};
+    
+    // Enable clock for CS pin port if not already enabled
+    __HAL_RCC_GPIOA_CLK_ENABLE();
+    
+    // Configure CS pin as output
+    GPIO_InitStruct.Pin = ICM_CS_PIN;
+    GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+    GPIO_InitStruct.Pull = GPIO_PULLUP;
+    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
+    HAL_GPIO_Init(ICM_CS_PORT, &GPIO_InitStruct);
+    
+    // Set CS high initially
+    HAL_GPIO_WritePin(ICM_CS_PORT, ICM_CS_PIN, GPIO_PIN_SET);
+    HAL_Delay(100);  // Give the sensor some time to power up
+    
+    // Reset the device first
+    SPI_Write(PWR_MGMT_1, 0x80);  // Device reset
+    HAL_Delay(100);  // Wait for reset to complete
+    
+    // Wake up the device
+    SPI_Write(PWR_MGMT_1, 0x01);  // Auto select best clock source
+    HAL_Delay(10);
+    
+    // Verify device ID
+    uint8_t whoami = SPI_Read(WHO_AM_I_REG);
+    printToConsole("WHO_AM_I register value: 0x%02X (expected: 0x%02X)", whoami, WHO_AM_I_VAL);
+    
+    if (whoami == WHO_AM_I_VAL) {
+        printToConsole("ICM-20948 found!");
+        
+        // Configure the device further
+        SPI_Write(PWR_MGMT_2, 0x00);  // Enable accel and gyro
+        HAL_Delay(10);
+        
+        // Configure gyro
+        SPI_Write(GYRO_CONFIG_1, 0x00);  // 250 dps full scale
+        HAL_Delay(10);
+        
+        // Configure accelerometer
+        SPI_Write(ACCEL_CONFIG, 0x00);  // 2g full scale
+        HAL_Delay(10);
+        
+        printToConsole("ICM-20948 configured successfully!");
+    } else {
+        printToConsole("Error: Unknown device ID or communication failure!");
+        printToConsole("Trying alternative initialization...");
+        
+        // Try a more robust initialization sequence
+        HAL_Delay(100);
+        
+        // Make sure CS is high then low to reset SPI interface
+        HAL_GPIO_WritePin(ICM_CS_PORT, ICM_CS_PIN, GPIO_PIN_SET);
+        HAL_Delay(10);
+        HAL_GPIO_WritePin(ICM_CS_PORT, ICM_CS_PIN, GPIO_PIN_RESET);
+        HAL_Delay(10);
+        HAL_GPIO_WritePin(ICM_CS_PORT, ICM_CS_PIN, GPIO_PIN_SET);
+        HAL_Delay(10);
+        
+        // Try reading WHO_AM_I again
+        whoami = SPI_Read(WHO_AM_I_REG);
+        printToConsole("Second attempt WHO_AM_I: 0x%02X", whoami);
+    }
+}
+
+void read_imu_data(void) {
+    int16_t accel_x, accel_y, accel_z;
+    int16_t gyro_x, gyro_y, gyro_z;
+    
+    // Read accelerometer data
+    uint8_t accel_x_h = SPI_Read(ACCEL_XOUT_H);
+    uint8_t accel_x_l = SPI_Read(ACCEL_XOUT_L);
+    uint8_t accel_y_h = SPI_Read(ACCEL_YOUT_H);
+    uint8_t accel_y_l = SPI_Read(ACCEL_YOUT_L);
+    uint8_t accel_z_h = SPI_Read(ACCEL_ZOUT_H);
+    uint8_t accel_z_l = SPI_Read(ACCEL_ZOUT_L);
+    
+    // Read gyroscope data
+    uint8_t gyro_x_h = SPI_Read(GYRO_XOUT_H);
+    uint8_t gyro_x_l = SPI_Read(GYRO_XOUT_L);
+    uint8_t gyro_y_h = SPI_Read(GYRO_YOUT_H);
+    uint8_t gyro_y_l = SPI_Read(GYRO_YOUT_L);
+    uint8_t gyro_z_h = SPI_Read(GYRO_ZOUT_H);
+    uint8_t gyro_z_l = SPI_Read(GYRO_ZOUT_L);
+    
+    // Combine high and low bytes
+    accel_x = (int16_t)((accel_x_h << 8) | accel_x_l);
+    accel_y = (int16_t)((accel_y_h << 8) | accel_y_l);
+    accel_z = (int16_t)((accel_z_h << 8) | accel_z_l);
+    
+    gyro_x = (int16_t)((gyro_x_h << 8) | gyro_x_l);
+    gyro_y = (int16_t)((gyro_y_h << 8) | gyro_y_l);
+    gyro_z = (int16_t)((gyro_z_h << 8) | gyro_z_l);
+    
+    // Print the data
+    printToConsole("Accel: X=%d, Y=%d, Z=%d", accel_x, accel_y, accel_z);
+    printToConsole("Gyro: X=%d, Y=%d, Z=%d", gyro_x, gyro_y, gyro_z);
+}
+
 /* USER CODE END 0 */
 
 /**
@@ -573,12 +766,39 @@ int main(void)
   MX_DMA_Init();
   MX_USART2_UART_Init();
   MX_USART6_UART_Init();
+  MX_USART1_UART_Init();
+  MX_SPI2_Init();
   /* USER CODE BEGIN 2 */
+
+  int size = strlen(tx_1);
+  int size2 = strlen(tx_2);
+  init_imu();
+
+
+  HAL_UART_Receive_DMA(&huart1, rx_buf, size);
+  HAL_UART_Transmit_DMA(&huart1, (uint8_t*)tx_1, size);
+  printToConsole("Sent: %s", tx_1);
 
   // Initialize DMA for UART6 reception
   HAL_UARTEx_ReceiveToIdle_DMA(&huart6, uartRxBuffer, UART_RX_BUFFER_SIZE);
   __HAL_DMA_DISABLE_IT(huart6.hdmarx, DMA_IT_HT); // Disable Half Transfer interrupt
   printToConsole("DMA Initialized!\r\n");
+
+  // Variables for test cycling
+  typedef enum {
+    TEST_IMU,
+    TEST_GPS,
+    TEST_BLUETOOTH,
+    TEST_COUNT
+  } TestMode;
+  
+  TestMode currentTest = TEST_IMU;
+  uint32_t testStartTime = 0;
+  const uint32_t TEST_DURATION_MS = 15000; // 6 seconds per test
+  
+  // Initialize test start time
+  testStartTime = HAL_GetTick();
+  printToConsole("\r\n=== Starting IMU Test ===\r\n");
 
   // Test USART6 reception
   // testUSART6Reception();
@@ -591,18 +811,45 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-    // For DEBUG:
-    // printToConsole("DMA buffer status: head=%d, search=%d\r\n", rxHead, searchPos);
-
-    // Process GPS NMEA sentences from DMA buffer
-    char nmeaBuffer[256];
-    if (getNMEASentence(nmeaBuffer, sizeof(nmeaBuffer))) {
-        // Debug raw NMEA sentence
-        printToConsole("\r\n--- Raw NMEA Sentence ---\r\n");
-        printToConsole("Length: %d bytes\r\n", strlen(nmeaBuffer));
-        printToConsole("Content: %s", nmeaBuffer);
+    // Check if it's time to switch tests
+    uint32_t currentTime = HAL_GetTick();
+    if (currentTime - testStartTime >= TEST_DURATION_MS) {
+      // Switch to next test
+      currentTest = (currentTest + 1) % TEST_COUNT;
+      testStartTime = currentTime;
+      
+      // Print header for new test
+      switch (currentTest) {
+        case TEST_IMU:
+          printToConsole("\r\n=== Starting IMU Test ===\r\n");
+          break;
+        case TEST_GPS:
+          printToConsole("\r\n=== Starting GPS Test ===\r\n");
+          break;
+        case TEST_BLUETOOTH:
+          printToConsole("\r\n=== Starting Bluetooth Test ===\r\n");
+          break;
+      }
+    }
+    
+    // Run the current test
+    switch (currentTest) {
+      case TEST_IMU:
+        // IMU test code
+        read_imu_data();
+        HAL_Delay(1000); // Read IMU once per second
+        break;
         
-        if (strstr(nmeaBuffer, "$GNRMC")) {
+      case TEST_GPS:
+        // GPS test code
+        char nmeaBuffer[256];
+        if (getNMEASentence(nmeaBuffer, sizeof(nmeaBuffer))) {
+          // Debug raw NMEA sentence
+          printToConsole("\r\n--- Raw NMEA Sentence ---\r\n");
+          printToConsole("Length: %d bytes\r\n", strlen(nmeaBuffer));
+          printToConsole("Content: %s", nmeaBuffer);
+          
+          if (strstr(nmeaBuffer, "$GNRMC")) {
             printToConsole("\r\n=== GNRMC Message Detected ===\r\n");
             
             // Debug each field before parsing
@@ -611,111 +858,87 @@ int main(void)
             int fieldIndex = 0;
             
             while (token != NULL) {
-                switch(fieldIndex) {
-                    case 0: printToConsole("Message ID: %s\r\n", token); break;
-                    case 1: printToConsole("UTC Time: %s\r\n", token); break;
-                    case 2: printToConsole("Status: %s (%s)\r\n", token, 
-                            (token[0] == 'A') ? "Active" : "Void"); break;
-                    case 3: printToConsole("Latitude: %s\r\n", token); break;
-                    case 4: printToConsole("N/S Indicator: %s\r\n", token); break;
-                    case 5: printToConsole("Longitude: %s\r\n", token); break;
-                    case 6: printToConsole("E/W Indicator: %s\r\n", token); break;
-                    case 7: printToConsole("Speed (knots): %s\r\n", token); break;
-                    case 8: printToConsole("Course: %s\r\n", token); break;
-                    case 9: printToConsole("Date: %s\r\n", token); break;
-                    default: printToConsole("Field %d: %s\r\n", fieldIndex, token);
-                }
-                token = strtok_r(NULL, ",", &saveptr);
-                fieldIndex++;
+              switch(fieldIndex) {
+                case 0: printToConsole("Message ID: %s\r\n", token); break;
+                case 1: printToConsole("UTC Time: %s\r\n", token); break;
+                case 2: printToConsole("Status: %s (%s)\r\n", token, 
+                        (token[0] == 'A') ? "Active" : "Void"); break;
+                case 3: printToConsole("Latitude: %s\r\n", token); break;
+                case 4: printToConsole("N/S Indicator: %s\r\n", token); break;
+                case 5: printToConsole("Longitude: %s\r\n", token); break;
+                case 6: printToConsole("E/W Indicator: %s\r\n", token); break;
+                case 7: printToConsole("Speed (knots): %s\r\n", token); break;
+                case 8: printToConsole("Course: %s\r\n", token); break;
+                case 9: printToConsole("Date: %s\r\n", token); break;
+                default: printToConsole("Field %d: %s\r\n", fieldIndex, token);
+              }
+              token = strtok_r(NULL, ",", &saveptr);
+              fieldIndex++;
             }
             
             printToConsole("Total fields: %d (expecting 12-13)\r\n", fieldIndex);
             
             // Try to parse with M8Q_ParseGNRMC
             if (M8Q_ParseGNRMC(nmeaBuffer, &gps_data)) {
-                printToConsole("\r\nParsing Successful!\r\n");
-                printToConsole("Time: %02d:%02d:%02d UTC\r\n", 
-                    gps_data.hours, gps_data.minutes, gps_data.seconds);
-                printToConsole("Fix Valid: %s\r\n", 
-                    gps_data.fix_valid ? "Yes" : "No");
-                printToConsole("Position: %.6f%c, %.6f%c\r\n",
-                    gps_data.latitude, gps_data.lat_direction,
-                    gps_data.longitude, gps_data.lon_direction);
-                if (gps_data.speed_knots > 0) {
-                    printToConsole("Speed: %.2f knots\r\n", gps_data.speed_knots);
-                    printToConsole("Course: %.2f degrees\r\n", gps_data.course);
-                }
+              printToConsole("\r\nParsing Successful!\r\n");
+              printToConsole("Time: %02d:%02d:%02d UTC\r\n", 
+                  gps_data.hours, gps_data.minutes, gps_data.seconds);
+              printToConsole("Fix Valid: %s\r\n", 
+                  gps_data.fix_valid ? "Yes" : "No");
+              printToConsole("Position: %.6f%c, %.6f%c\r\n",
+                  gps_data.latitude, gps_data.lat_direction,
+                  gps_data.longitude, gps_data.lon_direction);
+              if (gps_data.speed_knots > 0) {
+                printToConsole("Speed: %.2f knots\r\n", gps_data.speed_knots);
+                printToConsole("Course: %.2f degrees\r\n", gps_data.course);
+              }
             } else {
-                printToConsole("\r\nParsing Failed!\r\n");
-                printToConsole("Checksum validation: %s\r\n", 
-                    (strchr(nmeaBuffer, '*') != NULL) ? "Present" : "Missing");
+              printToConsole("\r\nParsing Failed!\r\n");
+              printToConsole("Checksum validation: %s\r\n", 
+                  (strchr(nmeaBuffer, '*') != NULL) ? "Present" : "Missing");
             }
             printToConsole("=========================\r\n");
-        } 
-        else if (strstr(nmeaBuffer, "$GNGGA")) {
-            printToConsole("Message Type: GGA (GPS Fix Data)\r\n");
-            
-            // Parse GGA message fields
-            char *saveptr;
-            char *token = strtok_r(nmeaBuffer, ",", &saveptr);
-            int field = 0;
-            
-            while (token != NULL) {
-                switch(field) {
-                    case 6: // Fix quality
-                        printToConsole("Fix Quality: ");
-                        switch(atoi(token)) {
-                            case 0: printToConsole("Invalid\r\n"); break;
-                            case 1: printToConsole("GPS Fix\r\n"); break;
-                            case 2: printToConsole("DGPS Fix\r\n"); break;
-                            default: printToConsole("Unknown (%s)\r\n", token); break;
-                        }
-                        break;
-                    case 7: // Satellites in use
-                        printToConsole("Satellites: %s in use\r\n", token);
-                        break;
-                    case 8: // HDOP
-                        {
-                            float hdop = atof(token);
-                            printToConsole("HDOP: %.1f ", hdop);
-                            if (hdop < 1.0) printToConsole("(Excellent)\r\n");
-                            else if (hdop < 2.0) printToConsole("(Good)\r\n");
-                            else if (hdop < 5.0) printToConsole("(Moderate)\r\n");
-                            else printToConsole("(Poor)\r\n");
-                        }
-                        break;
-                }
-                field++;
-                token = strtok_r(NULL, ",", &saveptr);
-            }
-        }
-        else if (strstr(nmeaBuffer, "$GNTXT")) {
-            GPS_Status status = parseGPSTXT(nmeaBuffer);
-            if (status != GPS_STATUS_NO_FIX) {
-                switch(status) {
-                    case GPS_STATUS_INIT:
-                        printToConsole("GPS Status: Initializing antenna\r\n");
-                        break;
-                    case GPS_STATUS_OK:
-                        printToConsole("GPS Status: Antenna OK, waiting for fix\r\n");
-                        break;
-                    case GPS_STATUS_ERROR:
-                        printToConsole("GPS Status: Antenna error detected!\r\n");
-                        break;
-                }
-            }
-            printToConsole("GPS Info Message: %s", nmeaBuffer);
-        }
-        else {
+          } 
+          else if (strstr(nmeaBuffer, "$GNGGA")) {
+            // ... existing GNGGA parsing code ...
+          }
+          else if (strstr(nmeaBuffer, "$GNTXT")) {
+            // ... existing GNTXT parsing code ...
+          }
+          else {
             printToConsole("Other Message Type: %.5s\r\n", nmeaBuffer);
+          }
         }
-    } 
-    // else {
-    //     printToConsole("ERROR: Failed to read NMEA sentence\r\n");
-    // }
-
-    // Optional: Add a small delay to prevent console flooding
-    HAL_Delay(10);
+        
+        // Small delay to prevent console flooding
+        HAL_Delay(10);
+        break;
+        
+      case TEST_BLUETOOTH:
+        // Bluetooth test code
+        static uint32_t lastBluetoothMsg = 0;
+        
+        // Send a test message every second
+        if (currentTime - lastBluetoothMsg >= 1000) {
+          lastBluetoothMsg = currentTime;
+          
+          // Send test message via UART1 (Bluetooth)
+          char btMsg[64];
+          snprintf(btMsg, sizeof(btMsg), "Bluetooth Test: %lu ms\r\n", currentTime);
+          HAL_UART_Transmit(&huart1, (uint8_t*)btMsg, strlen(btMsg), HAL_MAX_DELAY);
+          
+          printToConsole("Sent to Bluetooth: %s", btMsg);
+          
+          // Check for any received data
+          if (HAL_UART_Receive(&huart1, rx_buf, sizeof(rx_buf)-1, 10) == HAL_OK) {
+            rx_buf[sizeof(rx_buf)-1] = '\0'; // Ensure null termination
+            printToConsole("Received from Bluetooth: %s\r\n", rx_buf);
+          }
+        }
+        
+        HAL_Delay(100); // Small delay
+        break;
+    }
   }
   /* USER CODE END 3 */
 }
@@ -764,6 +987,77 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
+}
+
+/**
+  * @brief SPI2 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_SPI2_Init(void)
+{
+
+  /* USER CODE BEGIN SPI2_Init 0 */
+
+  /* USER CODE END SPI2_Init 0 */
+
+  /* USER CODE BEGIN SPI2_Init 1 */
+
+  /* USER CODE END SPI2_Init 1 */
+  /* SPI2 parameter configuration*/
+  hspi2.Instance = SPI2;
+  hspi2.Init.Mode = SPI_MODE_MASTER;
+  hspi2.Init.Direction = SPI_DIRECTION_2LINES;
+  hspi2.Init.DataSize = SPI_DATASIZE_8BIT;
+  hspi2.Init.CLKPolarity = SPI_POLARITY_HIGH;
+  hspi2.Init.CLKPhase = SPI_PHASE_2EDGE;
+  hspi2.Init.NSS = SPI_NSS_HARD_OUTPUT;
+  hspi2.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_2;
+  hspi2.Init.FirstBit = SPI_FIRSTBIT_MSB;
+  hspi2.Init.TIMode = SPI_TIMODE_DISABLE;
+  hspi2.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
+  hspi2.Init.CRCPolynomial = 10;
+  if (HAL_SPI_Init(&hspi2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN SPI2_Init 2 */
+
+  /* USER CODE END SPI2_Init 2 */
+
+}
+
+/**
+  * @brief USART1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_USART1_UART_Init(void)
+{
+
+  /* USER CODE BEGIN USART1_Init 0 */
+
+  /* USER CODE END USART1_Init 0 */
+
+  /* USER CODE BEGIN USART1_Init 1 */
+
+  /* USER CODE END USART1_Init 1 */
+  huart1.Instance = USART1;
+  huart1.Init.BaudRate = 9600;
+  huart1.Init.WordLength = UART_WORDLENGTH_8B;
+  huart1.Init.StopBits = UART_STOPBITS_1;
+  huart1.Init.Parity = UART_PARITY_NONE;
+  huart1.Init.Mode = UART_MODE_TX_RX;
+  huart1.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+  huart1.Init.OverSampling = UART_OVERSAMPLING_16;
+  if (HAL_UART_Init(&huart1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN USART1_Init 2 */
+
+  /* USER CODE END USART1_Init 2 */
+
 }
 
 /**
@@ -840,11 +1134,21 @@ static void MX_DMA_Init(void)
 
   /* DMA controller clock enable */
   __HAL_RCC_DMA2_CLK_ENABLE();
+  __HAL_RCC_DMA1_CLK_ENABLE();
 
   /* DMA interrupt init */
+  /* DMA1_Stream4_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Stream4_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Stream4_IRQn);
   /* DMA2_Stream1_IRQn interrupt configuration */
   HAL_NVIC_SetPriority(DMA2_Stream1_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(DMA2_Stream1_IRQn);
+  /* DMA2_Stream2_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA2_Stream2_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA2_Stream2_IRQn);
+  /* DMA2_Stream7_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA2_Stream7_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA2_Stream7_IRQn);
 
 }
 

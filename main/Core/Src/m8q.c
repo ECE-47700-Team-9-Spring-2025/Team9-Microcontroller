@@ -1,6 +1,7 @@
 #include "m8q.h"
 #include <string.h>
 #include <stdlib.h>
+#include <math.h>
 
 static float ParseLatLong(const char* str, char direction) {
     float degrees = atof(str);
