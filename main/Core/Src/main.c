@@ -732,6 +732,53 @@ void read_imu_data(void) {
     printToConsole("Gyro: X=%d, Y=%d, Z=%d\r\n", gyro_x, gyro_y, gyro_z);
 }
 
+typedef struct {
+    float distance;
+    float bearing;
+    float vector_north;
+    float vector_east;
+} GNSSVector;
+
+GNSSVector calculateGNSSVector(GPS_Data gps_data1, GPS_Data gps_data2) {
+    // Earth radius in meters
+    const float R = 6371000.0;
+    
+    // Convert latitude and longitude to radians
+    float lat1_rad = gps_data1.latitude * (M_PI / 180.0);
+    float lon1_rad = gps_data1.longitude * (M_PI / 180.0);
+    float lat2_rad = gps_data2.latitude * (M_PI / 180.0);
+    float lon2_rad = gps_data2.longitude * (M_PI / 180.0);
+    
+    // Calculate differences
+    float delta_lat = lat2_rad - lat1_rad;
+    float delta_lon = lon2_rad - lon1_rad;
+    
+    // Calculate distance using haversine formula
+    float a = sin(delta_lat/2) * sin(delta_lat/2) +
+              cos(lat1_rad) * cos(lat2_rad) * 
+              sin(delta_lon/2) * sin(delta_lon/2);
+    float c = 2 * atan2(sqrt(a), sqrt(1-a));
+    float distance = R * c; // Distance in meters
+    
+    // Calculate bearing (direction)
+    float y = sin(delta_lon) * cos(lat2_rad);
+    float x = cos(lat1_rad) * sin(lat2_rad) - 
+              sin(lat1_rad) * cos(lat2_rad) * cos(delta_lon);
+    float bearing = atan2(y, x);
+    
+    // Convert bearing to degrees (0-360)
+    bearing = bearing * (180.0 / M_PI);
+    if (bearing < 0) {
+        bearing += 360.0;
+    }
+    
+    // Calculate vector components (North and East)
+    float vector_north = distance * cos(bearing * (M_PI / 180.0));
+    float vector_east = distance * sin(bearing * (M_PI / 180.0));
+    
+    return (GNSSVector){distance, bearing, vector_north, vector_east};
+}
+
 /* USER CODE END 0 */
 
 /**
@@ -841,6 +888,31 @@ int main(void)
         break;
         
       case TEST_GPS:
+        // Calculate the vector between the two GPS points
+        GPS_Data gps_data1 = {
+            .latitude = 37.78,
+            .lat_direction = 'N',
+            .longitude = -122.42,
+            .lon_direction = 'W',
+            .speed_knots = 10.0,
+            .course = 270.0,
+            .fix_valid = true
+        };
+        GPS_Data gps_data2 = {
+            .latitude = 37.77,
+            .lat_direction = 'N',
+            .longitude = -122.43,
+            .lon_direction = 'W',
+            .speed_knots = 10.0,
+            .course = 270.0,
+            .fix_valid = true
+        };
+        GNSSVector gnss_vector = calculateGNSSVector(gps_data1, gps_data2);
+        printToConsole("Distance: %.2f meters\r\n", gnss_vector.distance);
+        printToConsole("Bearing: %.1f degrees\r\n", gnss_vector.bearing);
+        printToConsole("Vector (N,E): (%.2f, %.2f)\r\n", gnss_vector.vector_north, gnss_vector.vector_east);
+        break;
+        
         // GPS test code
         char nmeaBuffer[256];
         if (getNMEASentence(nmeaBuffer, sizeof(nmeaBuffer))) {
