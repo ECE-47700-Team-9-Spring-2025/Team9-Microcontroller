@@ -57,6 +57,29 @@ static char* tx_2 = "Hello World";
 #define ICM_CS_PIN       GPIO_PIN_1
 #define ICM_CS_PORT      GPIOC
 
+// Add these defines for magnetometer registers (AK09916)
+#define MAG_WHO_AM_I        0x01  // Should return 0x09
+#define MAG_ST1             0x10  // Status 1
+#define MAG_HXL             0x11  // X-axis LSB
+#define MAG_HXH             0x12  // X-axis MSB
+#define MAG_HYL             0x13  // Y-axis LSB
+#define MAG_HYH             0x14  // Y-axis MSB
+#define MAG_HZL             0x15  // Z-axis LSB
+#define MAG_HZH             0x16  // Z-axis MSB
+#define MAG_ST2             0x18  // Status 2
+#define MAG_CNTL2           0x31  // Control 2
+#define MAG_CNTL3           0x32  // Control 3
+#define USER_BANK_SEL	(0x7F)
+#define USER_BANK_0		(0x00)
+#define USER_BANK_1		(0x10)
+#define USER_BANK_2		(0x20)
+#define USER_BANK_3		(0x30)
+#define CLK_BEST_AVAIL	(0x01)
+#define GYRO_RATE_250	(0x00)
+#define GYRO_LPF_17HZ 	(0x29)
+
+// Magnetometer data storage
+int16_t mag_data[3];
 
 /* USER CODE END Includes */
 
@@ -537,7 +560,102 @@ void SPI_Write(uint8_t reg, uint8_t data) {
     deactivate_imu();
 }
 
-// Update initialization sequence
+// Helpers for magnetometer I2C communication
+void ICM_i2c_Mag_Write(uint8_t reg, uint8_t value) {
+    SPI_Write(USER_BANK_SEL, USER_BANK_3);  // Select user bank 3
+    HAL_Delay(1);
+    
+    SPI_Write(0x03, 0x0C);  // Set I2C_SLV0_ADDR to write mode
+    HAL_Delay(1);
+    
+    SPI_Write(0x04, reg);   // Set I2C_SLV0_REG to register address
+    HAL_Delay(1);
+    
+    SPI_Write(0x06, value); // Set I2C_SLV0_DO with value to write
+    HAL_Delay(1);
+}
+
+uint8_t ICM_i2c_Mag_Read(uint8_t reg) {
+    uint8_t data;
+    
+    SPI_Write(USER_BANK_SEL, USER_BANK_3);  // Select user bank 3
+    HAL_Delay(1);
+    
+    SPI_Write(0x03, 0x0C|0x80);  // Set to read mode
+    HAL_Delay(1);
+    
+    SPI_Write(0x04, reg);  // Set register to read
+    HAL_Delay(1);
+    
+    SPI_Write(0x06, 0xFF);  // Dummy write to trigger read
+    HAL_Delay(1);
+    
+    // Return to user bank 0 to read the data
+    SPI_Write(USER_BANK_SEL, USER_BANK_0);
+    
+    // Read the data from EXT_SLV_SENS_DATA register
+    data = SPI_Read(0x3B);
+    HAL_Delay(1);
+    
+    return data;
+}
+
+void ICM_InitMag() {
+    // Configure AUX I2C Magnetometer (onboard ICM-20948)
+    
+    // Select bank 0 and enable I2C master
+    SPI_Write(USER_BANK_SEL, USER_BANK_0);
+    HAL_Delay(10);
+    SPI_Write(0x0F, 0x30);  // INT Pin / Bypass Enable Configuration
+    HAL_Delay(10);
+    SPI_Write(0x03, 0x20);  // I2C_MST_EN
+    HAL_Delay(10);
+    
+    // Configure I2C master in bank 3
+    SPI_Write(USER_BANK_SEL, USER_BANK_3);
+    HAL_Delay(10);
+    SPI_Write(0x01, 0x4D);  // I2C Master mode and Speed 400 kHz
+    HAL_Delay(10);
+    SPI_Write(0x02, 0x01);  // I2C_SLV0_DLY enable
+    HAL_Delay(10);
+    SPI_Write(0x05, 0x81);  // Enable IIC and EXT_SENS_DATA == 1 Byte
+    HAL_Delay(10);
+    
+    // Reset magnetometer
+    ICM_i2c_Mag_Write(MAG_CNTL3, 0x01);
+    HAL_Delay(100);  // Wait for reset to complete
+    
+    // Set to continuous measurement mode & 16-bit output
+    ICM_i2c_Mag_Write(MAG_CNTL2, 0x08);  // Mode 4 (100 Hz)
+    HAL_Delay(10);
+}
+
+void ICM_ReadMag(int16_t magn[3]) {
+    uint8_t mag_buffer[10];
+    
+    // Read raw magnetometer data
+    mag_buffer[0] = ICM_i2c_Mag_Read(MAG_ST1);  // Status 1
+    
+    // Only proceed if data is ready (Data Ready bit in ST1)
+    if (mag_buffer[0] & 0x01) {
+        mag_buffer[1] = ICM_i2c_Mag_Read(MAG_HXL);
+        mag_buffer[2] = ICM_i2c_Mag_Read(MAG_HXH);
+        magn[0] = mag_buffer[1] | (mag_buffer[2] << 8);
+        
+        mag_buffer[3] = ICM_i2c_Mag_Read(MAG_HYL);
+        mag_buffer[4] = ICM_i2c_Mag_Read(MAG_HYH);
+        magn[1] = mag_buffer[3] | (mag_buffer[4] << 8);
+        
+        mag_buffer[5] = ICM_i2c_Mag_Read(MAG_HZL);
+        mag_buffer[6] = ICM_i2c_Mag_Read(MAG_HZH);
+        magn[2] = mag_buffer[5] | (mag_buffer[6] << 8);
+        
+        // Trigger next measurement
+        ICM_i2c_Mag_Write(MAG_CNTL2, 0x08);
+    }
+}
+
+// Update the init_imu function to include magnetometer initialization
 void init_imu(void) {
     // Reset the device first
     deactivate_imu();
@@ -547,33 +665,44 @@ void init_imu(void) {
 
     // Reset the device
     SPI_Write(PWR_MGMT_1, 0x80);  // Device reset
-    HAL_Delay(10);  // Wait for reset to complete
+    HAL_Delay(100);  // Wait for reset to complete
     SPI_Write(PWR_MGMT_1, 0x01);  // Auto select best clock source
     HAL_Delay(10);
     
     // Verify device ID
     uint8_t whoami = SPI_Read(WHO_AM_I_REG);
-    printToConsole("WHO_AM_I register value: 0x%02X (expected: 0x%02X)", whoami, WHO_AM_I_VAL);
+    printToConsole("WHO_AM_I register value: 0x%02X (expected: 0x%02X)\r\n", whoami, WHO_AM_I_VAL);
     
     if (whoami == WHO_AM_I_VAL) {
-        printToConsole("ICM-20948 found!");
+        printToConsole("ICM-20948 found!\r\n");
         
         // Configure the device further
         SPI_Write(PWR_MGMT_2, 0x00);  // Enable accel and gyro
         HAL_Delay(10);
         
+        // Select bank 2 for gyro config
+        SPI_Write(USER_BANK_SEL, USER_BANK_2);
+        HAL_Delay(10);
+        
         // Configure gyro
-        SPI_Write(GYRO_CONFIG_1, 0x00);  // 250 dps full scale
+        SPI_Write(GYRO_CONFIG_1, GYRO_RATE_250 | GYRO_LPF_17HZ);
         HAL_Delay(10);
         
-        // Configure accelerometer
-        SPI_Write(ACCEL_CONFIG, 0x00);  // 2g full scale
+        // Set accelerometer config
+        SPI_Write(0x14, 0x00);  // 2g full scale
         HAL_Delay(10);
         
-        printToConsole("ICM-20948 configured successfully!");
+        // Return to bank 0
+        SPI_Write(USER_BANK_SEL, USER_BANK_0);
+        HAL_Delay(10);
+        
+        // Initialize magnetometer
+        ICM_InitMag();
+        
+        printToConsole("ICM-20948 configured successfully with magnetometer!\r\n");
     } else {
-        printToConsole("Error: Unknown device ID or communication failure!");
-        printToConsole("Trying alternative initialization...");
+        printToConsole("Error: Unknown device ID or communication failure!\r\n");
+        printToConsole("Trying alternative initialization...\r\n");
         
         // Try a more robust initialization sequence
         HAL_Delay(100);
@@ -588,7 +717,7 @@ void init_imu(void) {
         
         // Try reading WHO_AM_I again
         whoami = SPI_Read(WHO_AM_I_REG);
-        printToConsole("Second attempt WHO_AM_I: 0x%02X", whoami);
+        printToConsole("Second attempt WHO_AM_I: 0x%02X\r\n", whoami);
     }
 }
 
@@ -621,9 +750,13 @@ void read_imu_data(void) {
     gyro_y = (int16_t)((gyro_y_h << 8) | gyro_y_l);
     gyro_z = (int16_t)((gyro_z_h << 8) | gyro_z_l);
     
+    // Read magnetometer data
+    ICM_ReadMag(mag_data);
+    
     // Print the data
     printToConsole("Accel: X=%d, Y=%d, Z=%d\r\n", accel_x, accel_y, accel_z);
     printToConsole("Gyro: X=%d, Y=%d, Z=%d\r\n", gyro_x, gyro_y, gyro_z);
+    printToConsole("Mag: X=%d, Y=%d, Z=%d\r\n", mag_data[0], mag_data[1], mag_data[2]);
 }
 
 /* USER CODE END 0 */
@@ -887,6 +1020,9 @@ int main(void)
         
         HAL_Delay(100); // Small delay
         break;
+    case TEST_COUNT:
+      printToConsole("TEST_COUNT\r\n");
+      break;
     }
   }
   /* USER CODE END 3 */
