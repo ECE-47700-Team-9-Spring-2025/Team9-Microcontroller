@@ -1,2 +1,2 @@
 follow-output:
-	screen $(ls /dev/tty.*) 115200
+	screen $$(ls /dev/tty.usbmodem*) 115200

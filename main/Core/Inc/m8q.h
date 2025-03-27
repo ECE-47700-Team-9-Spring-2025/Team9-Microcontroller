@@ -28,11 +28,16 @@ typedef struct {
     bool fix_valid;
 } GPS_Data;
 
+// GNSS vector structure
+typedef struct {
+    float distance;
+    float bearing;
+    float vector_north;
+    float vector_east;
+} GNSSVector;
+
 // Function prototypes
-void M8Q_Init(void);
-bool M8Q_ParseNMEA(const char* sentence, GPS_Data* data);
 bool M8Q_ParseGNRMC(const char* sentence, GPS_Data* data);
-bool M8Q_ParseGNGGA(const char* sentence, GPS_Data* data);
-bool M8Q_ParseGNTXT(const char* sentence, GPS_Data* data);
+GNSSVector calculateGNSSVector(GPS_Data gps_data1, GPS_Data gps_data2);
 
 #endif // M8Q_H

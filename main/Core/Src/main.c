@@ -54,9 +54,32 @@ static char* tx_2 = "Hello World";
 #define ACCEL_CONFIG     0x14
 
 // ICM-20948 specific defines
-#define ICM_CS_PIN       GPIO_PIN_12
-#define ICM_CS_PORT      GPIOB
+#define ICM_CS_PIN       GPIO_PIN_1
+#define ICM_CS_PORT      GPIOC
 
+// Add these defines for magnetometer registers (AK09916)
+#define MAG_WHO_AM_I        0x01  // Should return 0x09
+#define MAG_ST1             0x10  // Status 1
+#define MAG_HXL             0x11  // X-axis LSB
+#define MAG_HXH             0x12  // X-axis MSB
+#define MAG_HYL             0x13  // Y-axis LSB
+#define MAG_HYH             0x14  // Y-axis MSB
+#define MAG_HZL             0x15  // Z-axis LSB
+#define MAG_HZH             0x16  // Z-axis MSB
+#define MAG_ST2             0x18  // Status 2
+#define MAG_CNTL2           0x31  // Control 2
+#define MAG_CNTL3           0x32  // Control 3
+#define USER_BANK_SEL	(0x7F)
+#define USER_BANK_0		(0x00)
+#define USER_BANK_1		(0x10)
+#define USER_BANK_2		(0x20)
+#define USER_BANK_3		(0x30)
+#define CLK_BEST_AVAIL	(0x01)
+#define GYRO_RATE_250	(0x00)
+#define GYRO_LPF_17HZ 	(0x29)
+
+// Magnetometer data storage
+int16_t mag_data[3];
 
 /* USER CODE END Includes */
 
@@ -82,7 +105,6 @@ typedef enum {
 
 /* Private variables ---------------------------------------------------------*/
 SPI_HandleTypeDef hspi2;
-DMA_HandleTypeDef hdma_spi2_tx;
 
 UART_HandleTypeDef huart1;
 UART_HandleTypeDef huart2;
@@ -394,7 +416,6 @@ bool printCurrentGpsOutput(void) {
     }
 }
 
-// Function to extract NMEA sentences from DMA buffer
 bool getNMEASentence(char *buffer, size_t maxSize) {
     uint16_t startPos = UINT16_MAX;
     uint16_t endPos = UINT16_MAX;
@@ -459,8 +480,6 @@ bool getNMEASentence(char *buffer, size_t maxSize) {
     return false;
 }
 
-// UART reception complete callback
-// Replace your current HAL_UARTEx_RxEventCallback with this improved version
 void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
     if (huart->Instance == USART6) {
         // Debug output to confirm callback is working
@@ -483,103 +502,6 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
     }
 }
 
-// DEBUGGING CODE
-// Add this function to test USART6 reception
-void testUSART6Reception(void) {
-    printToConsole("\r\n=== USART6 Reception Test ===\r\n");
-    printToConsole("Listening for data on USART6 for 10 seconds...\r\n");
-    
-    // Variables for the test
-    uint8_t rxByte;
-    uint32_t bytesReceived = 0;
-    uint32_t startTime = HAL_GetTick();
-    uint32_t lastPrintTime = startTime;
-    uint8_t sampleData[32] = {0};
-    uint8_t sampleIndex = 0;
-    
-    // Turn on LED to indicate test is running
-    HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_SET);
-    
-    // Test for 10 seconds
-    while (HAL_GetTick() - startTime < 10000) {
-        // Try to receive a byte with short timeout
-        if (HAL_UART_Receive(&huart6, &rxByte, 1, 10) == HAL_OK) {
-            bytesReceived++;
-            
-            // Store some sample data (first 32 bytes)
-            if (sampleIndex < sizeof(sampleData)) {
-                sampleData[sampleIndex++] = rxByte;
-            }
-            
-            // Toggle LED on each byte received
-            HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
-        }
-        
-        // Print status every second
-        if (HAL_GetTick() - lastPrintTime >= 1000) {
-            printToConsole("Bytes received so far: %lu\r\n", bytesReceived);
-            lastPrintTime = HAL_GetTick();
-        }
-    }
-    
-    // Turn off LED
-    HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_RESET);
-    
-    // Print test results
-    printToConsole("\r\n=== Test Results ===\r\n");
-    printToConsole("Total bytes received: %lu\r\n", bytesReceived);
-    
-    if (bytesReceived > 0) {
-        // Print sample of received data in different formats
-        printToConsole("Sample data (ASCII): ");
-        for (uint8_t i = 0; i < sampleIndex; i++) {
-            // Print printable ASCII characters, or a dot for non-printable
-            if (sampleData[i] >= 32 && sampleData[i] <= 126) {
-                printToConsole("%c", sampleData[i]);
-            } else {
-                printToConsole(".");
-            }
-        }
-        printToConsole("\r\n");
-        
-        printToConsole("Sample data (HEX): ");
-        for (uint8_t i = 0; i < sampleIndex; i++) {
-            printToConsole("%02X ", sampleData[i]);
-            // Add newline every 16 bytes for readability
-            if ((i + 1) % 16 == 0 && i < sampleIndex - 1) {
-                printToConsole("\r\n                   ");
-            }
-        }
-        printToConsole("\r\n");
-        
-        // Check if data looks like NMEA sentences
-        bool containsDollarSign = false;
-        for (uint8_t i = 0; i < sampleIndex; i++) {
-            if (sampleData[i] == '$') {
-                containsDollarSign = true;
-                break;
-            }
-        }
-        
-        if (containsDollarSign) {
-            printToConsole("Data appears to contain NMEA sentences ($ character found)\r\n");
-        } else {
-            printToConsole("WARNING: No NMEA sentence markers ($) found in sample data\r\n");
-        }
-    } else {
-        printToConsole("No data received! Check connections and GPS module power\r\n");
-        printToConsole("Troubleshooting tips:\r\n");
-        printToConsole("1. Verify GPS module is powered (check voltage)\r\n");
-        printToConsole("2. Confirm GPS TX is connected to STM32 RX (PC7)\r\n");
-        printToConsole("3. Try different baud rate (current: %lu)\r\n", huart6.Init.BaudRate);
-        printToConsole("4. Check if GPS module needs initialization commands\r\n");
-    }
-    
-    printToConsole("=== Test Complete ===\r\n\r\n");
-}
-
-
-
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
     if(huart == &huart1) {
@@ -591,95 +513,196 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
     }
 }
 
-// Update SPI read/write functions
+// Set PWM duty cycle
+// void PWM_SetDutyCycle(TIM_HandleTypeDef *htim, uint32_t Channel, uint16_t dutyCycle) {
+//     uint16_t pulse = (__HAL_TIM_GET_AUTORELOAD(htim) * dutyCycle) / 100;
+//     __HAL_TIM_SET_COMPARE(htim, Channel, pulse);
+// }
+
+// imu libraries
+typedef struct {
+    int16_t x_accel;
+    int16_t y_accel;
+    int16_t z_accel;
+    int16_t x_gyro;
+    int16_t y_gyro;
+    int16_t z_gyro;
+} icm_20948_data;
+
+void activate_imu() {
+    HAL_GPIO_WritePin(ICM_CS_PORT, ICM_CS_PIN, GPIO_PIN_RESET);
+}
+
+void deactivate_imu() {
+    HAL_GPIO_WritePin(ICM_CS_PORT, ICM_CS_PIN, GPIO_PIN_SET);
+}
+
 uint8_t SPI_Read(uint8_t reg) {
     uint8_t rx_data = 0;
-    uint8_t tx_data = reg | 0x80;  // Set the read bit (bit 7)
-    
-    HAL_GPIO_WritePin(ICM_CS_PORT, ICM_CS_PIN, GPIO_PIN_RESET);  // CS LOW
-    
-    // Small delay to ensure CS is stable before transmission
-    for(volatile int i = 0; i < 10; i++);
-    
+    uint8_t tx_data = reg | 0x80;  // Set the read bit (bit 7) to high
+    activate_imu();    
+    HAL_Delay(10);
     HAL_SPI_Transmit(&hspi2, &tx_data, 1, HAL_MAX_DELAY);
     HAL_SPI_Receive(&hspi2, &rx_data, 1, HAL_MAX_DELAY);
-    
-    // Small delay before raising CS
-    for(volatile int i = 0; i < 10; i++);
-    
-    HAL_GPIO_WritePin(ICM_CS_PORT, ICM_CS_PIN, GPIO_PIN_SET);    // CS HIGH
-    
+    HAL_Delay(10);
+    deactivate_imu();
     return rx_data;
 }
 
 void SPI_Write(uint8_t reg, uint8_t data) {
     uint8_t tx_data[2];
-    tx_data[0] = reg & 0x7F;  // Clear the read bit (bit 7)
+    tx_data[0] = reg & 0x7F;  // Clear the read bit (bit 7) to low
     tx_data[1] = data;
-    
-    HAL_GPIO_WritePin(ICM_CS_PORT, ICM_CS_PIN, GPIO_PIN_RESET);  // CS LOW
-    
-    // Small delay to ensure CS is stable before transmission
-    for(volatile int i = 0; i < 10; i++);
-    
+    activate_imu();
+    HAL_Delay(10);
     HAL_SPI_Transmit(&hspi2, tx_data, 2, HAL_MAX_DELAY);
-    
-    // Small delay before raising CS
-    for(volatile int i = 0; i < 10; i++);
-    
-    HAL_GPIO_WritePin(ICM_CS_PORT, ICM_CS_PIN, GPIO_PIN_SET);    // CS HIGH
+    HAL_Delay(10);
+    deactivate_imu();
 }
 
-// Update initialization sequence
-void init_imu(void) {
-    // Configure CS pin as output and set it high initially
-    GPIO_InitTypeDef GPIO_InitStruct = {0};
+// Helpers for magnetometer I2C communication
+void ICM_i2c_Mag_Write(uint8_t reg, uint8_t value) {
+    SPI_Write(USER_BANK_SEL, USER_BANK_3);  // Select user bank 3
+    HAL_Delay(1);
     
-    // Enable clock for CS pin port if not already enabled
-    __HAL_RCC_GPIOA_CLK_ENABLE();
+    SPI_Write(0x03, 0x0C);  // Set I2C_SLV0_ADDR to write mode
+    HAL_Delay(1);
     
-    // Configure CS pin as output
-    GPIO_InitStruct.Pin = ICM_CS_PIN;
-    GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-    GPIO_InitStruct.Pull = GPIO_PULLUP;
-    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
-    HAL_GPIO_Init(ICM_CS_PORT, &GPIO_InitStruct);
+    SPI_Write(0x04, reg);   // Set I2C_SLV0_REG to register address
+    HAL_Delay(1);
     
-    // Set CS high initially
-    HAL_GPIO_WritePin(ICM_CS_PORT, ICM_CS_PIN, GPIO_PIN_SET);
-    HAL_Delay(100);  // Give the sensor some time to power up
+    SPI_Write(0x06, value); // Set I2C_SLV0_DO with value to write
+    HAL_Delay(1);
+}
+
+uint8_t ICM_i2c_Mag_Read(uint8_t reg) {
+    uint8_t data;
     
-    // Reset the device first
-    SPI_Write(PWR_MGMT_1, 0x80);  // Device reset
+    SPI_Write(USER_BANK_SEL, USER_BANK_3);  // Select user bank 3
+    HAL_Delay(1);
+    
+    SPI_Write(0x03, 0x0C|0x80);  // Set to read mode
+    HAL_Delay(1);
+    
+    SPI_Write(0x04, reg);  // Set register to read
+    HAL_Delay(1);
+    
+    SPI_Write(0x06, 0xFF);  // Dummy write to trigger read
+    HAL_Delay(1);
+    
+    // Return to user bank 0 to read the data
+    SPI_Write(USER_BANK_SEL, USER_BANK_0);
+    
+    // Read the data from EXT_SLV_SENS_DATA register
+    data = SPI_Read(0x3B);
+    HAL_Delay(1);
+    
+    return data;
+}
+
+void ICM_InitMag() {
+    // Configure AUX I2C Magnetometer (onboard ICM-20948)
+    
+    // Select bank 0 and enable I2C master
+    SPI_Write(USER_BANK_SEL, USER_BANK_0);
+    HAL_Delay(10);
+    SPI_Write(0x0F, 0x30);  // INT Pin / Bypass Enable Configuration
+    HAL_Delay(10);
+    SPI_Write(0x03, 0x20);  // I2C_MST_EN
+    HAL_Delay(10);
+    
+    // Configure I2C master in bank 3
+    SPI_Write(USER_BANK_SEL, USER_BANK_3);
+    HAL_Delay(10);
+    SPI_Write(0x01, 0x4D);  // I2C Master mode and Speed 400 kHz
+    HAL_Delay(10);
+    SPI_Write(0x02, 0x01);  // I2C_SLV0_DLY enable
+    HAL_Delay(10);
+    SPI_Write(0x05, 0x81);  // Enable IIC and EXT_SENS_DATA == 1 Byte
+    HAL_Delay(10);
+    
+    // Reset magnetometer
+    ICM_i2c_Mag_Write(MAG_CNTL3, 0x01);
     HAL_Delay(100);  // Wait for reset to complete
     
-    // Wake up the device
+    // Set to continuous measurement mode & 16-bit output
+    ICM_i2c_Mag_Write(MAG_CNTL2, 0x08);  // Mode 4 (100 Hz)
+    HAL_Delay(10);
+}
+
+void ICM_ReadMag(int16_t magn[3]) {
+    uint8_t mag_buffer[10];
+    
+    // Read raw magnetometer data
+    mag_buffer[0] = ICM_i2c_Mag_Read(MAG_ST1);  // Status 1
+    
+    // Only proceed if data is ready (Data Ready bit in ST1)
+    if (mag_buffer[0] & 0x01) {
+        mag_buffer[1] = ICM_i2c_Mag_Read(MAG_HXL);
+        mag_buffer[2] = ICM_i2c_Mag_Read(MAG_HXH);
+        magn[0] = mag_buffer[1] | (mag_buffer[2] << 8);
+        
+        mag_buffer[3] = ICM_i2c_Mag_Read(MAG_HYL);
+        mag_buffer[4] = ICM_i2c_Mag_Read(MAG_HYH);
+        magn[1] = mag_buffer[3] | (mag_buffer[4] << 8);
+        
+        mag_buffer[5] = ICM_i2c_Mag_Read(MAG_HZL);
+        mag_buffer[6] = ICM_i2c_Mag_Read(MAG_HZH);
+        magn[2] = mag_buffer[5] | (mag_buffer[6] << 8);
+        
+        // Trigger next measurement
+        ICM_i2c_Mag_Write(MAG_CNTL2, 0x08);
+    }
+}
+
+// Update the init_imu function to include magnetometer initialization
+void init_imu(void) {
+    // Reset the device first
+    deactivate_imu();
+    HAL_Delay(10);
+    activate_imu();
+    HAL_Delay(10);
+
+    // Reset the device
+    SPI_Write(PWR_MGMT_1, 0x80);  // Device reset
+    HAL_Delay(100);  // Wait for reset to complete
     SPI_Write(PWR_MGMT_1, 0x01);  // Auto select best clock source
     HAL_Delay(10);
     
     // Verify device ID
     uint8_t whoami = SPI_Read(WHO_AM_I_REG);
-    printToConsole("WHO_AM_I register value: 0x%02X (expected: 0x%02X)", whoami, WHO_AM_I_VAL);
+    printToConsole("WHO_AM_I register value: 0x%02X (expected: 0x%02X)\r\n", whoami, WHO_AM_I_VAL);
     
     if (whoami == WHO_AM_I_VAL) {
-        printToConsole("ICM-20948 found!");
+        printToConsole("ICM-20948 found!\r\n");
         
         // Configure the device further
         SPI_Write(PWR_MGMT_2, 0x00);  // Enable accel and gyro
         HAL_Delay(10);
         
+        // Select bank 2 for gyro config
+        SPI_Write(USER_BANK_SEL, USER_BANK_2);
+        HAL_Delay(10);
+        
         // Configure gyro
-        SPI_Write(GYRO_CONFIG_1, 0x00);  // 250 dps full scale
+        SPI_Write(GYRO_CONFIG_1, GYRO_RATE_250 | GYRO_LPF_17HZ);
         HAL_Delay(10);
         
-        // Configure accelerometer
-        SPI_Write(ACCEL_CONFIG, 0x00);  // 2g full scale
+        // Set accelerometer config
+        SPI_Write(0x14, 0x00);  // 2g full scale
         HAL_Delay(10);
         
-        printToConsole("ICM-20948 configured successfully!");
+        // Return to bank 0
+        SPI_Write(USER_BANK_SEL, USER_BANK_0);
+        HAL_Delay(10);
+        
+        // Initialize magnetometer
+        ICM_InitMag();
+        
+        printToConsole("ICM-20948 configured successfully with magnetometer!\r\n");
     } else {
-        printToConsole("Error: Unknown device ID or communication failure!");
-        printToConsole("Trying alternative initialization...");
+        printToConsole("Error: Unknown device ID or communication failure!\r\n");
+        printToConsole("Trying alternative initialization...\r\n");
         
         // Try a more robust initialization sequence
         HAL_Delay(100);
@@ -694,7 +717,7 @@ void init_imu(void) {
         
         // Try reading WHO_AM_I again
         whoami = SPI_Read(WHO_AM_I_REG);
-        printToConsole("Second attempt WHO_AM_I: 0x%02X", whoami);
+        printToConsole("Second attempt WHO_AM_I: 0x%02X\r\n", whoami);
     }
 }
 
@@ -727,56 +750,13 @@ void read_imu_data(void) {
     gyro_y = (int16_t)((gyro_y_h << 8) | gyro_y_l);
     gyro_z = (int16_t)((gyro_z_h << 8) | gyro_z_l);
     
+    // Read magnetometer data
+    ICM_ReadMag(mag_data);
+    
     // Print the data
     printToConsole("Accel: X=%d, Y=%d, Z=%d\r\n", accel_x, accel_y, accel_z);
     printToConsole("Gyro: X=%d, Y=%d, Z=%d\r\n", gyro_x, gyro_y, gyro_z);
-}
-
-typedef struct {
-    float distance;
-    float bearing;
-    float vector_north;
-    float vector_east;
-} GNSSVector;
-
-GNSSVector calculateGNSSVector(GPS_Data gps_data1, GPS_Data gps_data2) {
-    // Earth radius in meters
-    const float R = 6371000.0;
-    
-    // Convert latitude and longitude to radians
-    float lat1_rad = gps_data1.latitude * (M_PI / 180.0);
-    float lon1_rad = gps_data1.longitude * (M_PI / 180.0);
-    float lat2_rad = gps_data2.latitude * (M_PI / 180.0);
-    float lon2_rad = gps_data2.longitude * (M_PI / 180.0);
-    
-    // Calculate differences
-    float delta_lat = lat2_rad - lat1_rad;
-    float delta_lon = lon2_rad - lon1_rad;
-    
-    // Calculate distance using haversine formula
-    float a = sin(delta_lat/2) * sin(delta_lat/2) +
-              cos(lat1_rad) * cos(lat2_rad) * 
-              sin(delta_lon/2) * sin(delta_lon/2);
-    float c = 2 * atan2(sqrt(a), sqrt(1-a));
-    float distance = R * c; // Distance in meters
-    
-    // Calculate bearing (direction)
-    float y = sin(delta_lon) * cos(lat2_rad);
-    float x = cos(lat1_rad) * sin(lat2_rad) - 
-              sin(lat1_rad) * cos(lat2_rad) * cos(delta_lon);
-    float bearing = atan2(y, x);
-    
-    // Convert bearing to degrees (0-360)
-    bearing = bearing * (180.0 / M_PI);
-    if (bearing < 0) {
-        bearing += 360.0;
-    }
-    
-    // Calculate vector components (North and East)
-    float vector_north = distance * cos(bearing * (M_PI / 180.0));
-    float vector_east = distance * sin(bearing * (M_PI / 180.0));
-    
-    return (GNSSVector){distance, bearing, vector_north, vector_east};
+    printToConsole("Mag: X=%d, Y=%d, Z=%d\r\n", mag_data[0], mag_data[1], mag_data[2]);
 }
 
 /* USER CODE END 0 */
@@ -818,10 +798,7 @@ int main(void)
   /* USER CODE BEGIN 2 */
 
   int size = strlen(tx_1);
-  int size2 = strlen(tx_2);
   init_imu();
-
-
   HAL_UART_Receive_DMA(&huart1, rx_buf, size);
   HAL_UART_Transmit_DMA(&huart1, (uint8_t*)tx_1, size);
   printToConsole("Sent: %s", tx_1);
@@ -882,9 +859,42 @@ int main(void)
     // Run the current test
     switch (currentTest) {
       case TEST_IMU:
-        // IMU test code
+        // reg bank select, page 54
+        HAL_GPIO_WritePin(ICM_CS_PORT, ICM_CS_PIN, GPIO_PIN_RESET);
+        uint8_t reg = 0x7F;
+        uint8_t data = 0;
+        HAL_SPI_Transmit(&hspi2, &reg, 1, 100);
+        HAL_SPI_Transmit(&hspi2, &data, 1, 100);
+        HAL_GPIO_WritePin(ICM_CS_PORT, ICM_CS_PIN, GPIO_PIN_SET);
+        HAL_Delay(100);
+
+        // WHO AM I REGISTER, PAGE 36
+        HAL_GPIO_WritePin(ICM_CS_PORT, ICM_CS_PIN, GPIO_PIN_RESET);
+        reg = 0x00 | 0x80;
+        HAL_SPI_Transmit(&hspi2, &reg, 1, 100);
+        HAL_SPI_Receive(&hspi2, &data, 1, 100);
+        printToConsole("WHO AM I: %02X\r\n", data);
+        HAL_GPIO_WritePin(ICM_CS_PORT, ICM_CS_PIN, GPIO_PIN_SET);
+        HAL_Delay(100);
+
+        // ICM READ DATA, PAGE 42
+        // HAL_GPIO_WritePin(ICM_CS_PORT, ICM_CS_PIN, GPIO_PIN_RESET);
+        // uint8_t data_rx[12];
+        // uint8_t temp_data = 0x80 | ACCEL_XOUT_H;
+        // HAL_SPI_Transmit(&hspi2, &temp_data, 1, 1000);
+        // HAL_SPI_Receive(&hspi2, data_rx, 12, 1000);
+
+        // uint16_t accel_x = ((int16_t)data_rx[0]<<8) | data_rx[1];
+        // uint16_t accel_y = ((int16_t)data_rx[2]<<8) | data_rx[3];
+        // uint16_t accel_z = ((int16_t)data_rx[4]<<8) | data_rx[5];
+        // printToConsole("ACCEL XOUT: %04X\r\n", accel_x);
+        // printToConsole("ACCEL YOUT: %04X\r\n", accel_y);
+        // printToConsole("ACCEL ZOUT: %04X\r\n", accel_z);
+
+        // HAL_GPIO_WritePin(ICM_CS_PORT, ICM_CS_PIN, GPIO_PIN_SET);
+        // HAL_Delay(100);
         read_imu_data();
-        HAL_Delay(1000); // Read IMU once per second
+        
         break;
         
       case TEST_GPS:
@@ -1010,6 +1020,9 @@ int main(void)
         
         HAL_Delay(100); // Small delay
         break;
+    case TEST_COUNT:
+      printToConsole("TEST_COUNT\r\n");
+      break;
     }
   }
   /* USER CODE END 3 */
@@ -1083,8 +1096,8 @@ static void MX_SPI2_Init(void)
   hspi2.Init.DataSize = SPI_DATASIZE_8BIT;
   hspi2.Init.CLKPolarity = SPI_POLARITY_HIGH;
   hspi2.Init.CLKPhase = SPI_PHASE_2EDGE;
-  hspi2.Init.NSS = SPI_NSS_HARD_OUTPUT;
-  hspi2.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_2;
+  hspi2.Init.NSS = SPI_NSS_SOFT;
+  hspi2.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_8;
   hspi2.Init.FirstBit = SPI_FIRSTBIT_MSB;
   hspi2.Init.TIMode = SPI_TIMODE_DISABLE;
   hspi2.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
@@ -1206,12 +1219,8 @@ static void MX_DMA_Init(void)
 
   /* DMA controller clock enable */
   __HAL_RCC_DMA2_CLK_ENABLE();
-  __HAL_RCC_DMA1_CLK_ENABLE();
 
   /* DMA interrupt init */
-  /* DMA1_Stream4_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(DMA1_Stream4_IRQn, 0, 0);
-  HAL_NVIC_EnableIRQ(DMA1_Stream4_IRQn);
   /* DMA2_Stream1_IRQn interrupt configuration */
   HAL_NVIC_SetPriority(DMA2_Stream1_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(DMA2_Stream1_IRQn);
@@ -1242,6 +1251,9 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOB_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_1, GPIO_PIN_RESET);
+
+  /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin : B1_Pin */
@@ -1249,6 +1261,13 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(B1_GPIO_Port, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : PC1 */
+  GPIO_InitStruct.Pin = GPIO_PIN_1;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
   /*Configure GPIO pin : LD2_Pin */
   GPIO_InitStruct.Pin = LD2_Pin;
