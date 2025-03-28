@@ -126,6 +126,12 @@ GPS_Data gps_data;
 uint8_t uartRxBuffer[UART_RX_BUFFER_SIZE];
 volatile uint16_t rxHead = 0;
 volatile uint16_t searchPos = 0;
+
+// Add these global variables for rolling average
+#define ROLLING_AVG_SAMPLES 3
+static int16_t accel_history[ROLLING_AVG_SAMPLES][3] = {0};
+static int16_t mag_history[ROLLING_AVG_SAMPLES][3] = {0};
+static uint8_t history_index = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -546,10 +552,10 @@ uint8_t SPI_Read(uint8_t reg) {
     uint8_t rx_data = 0;
     uint8_t tx_data = reg | 0x80;  // Set the read bit (bit 7) to high
     activate_imu();    
-    HAL_Delay(10);
+    HAL_Delay(1);
     HAL_SPI_Transmit(&hspi2, &tx_data, 1, HAL_MAX_DELAY);
     HAL_SPI_Receive(&hspi2, &rx_data, 1, HAL_MAX_DELAY);
-    HAL_Delay(10);
+    HAL_Delay(1);
     deactivate_imu();
     return rx_data;
 }
@@ -559,9 +565,9 @@ void SPI_Write(uint8_t reg, uint8_t data) {
     tx_data[0] = reg & 0x7F;  // Clear the read bit (bit 7) to low
     tx_data[1] = data;
     activate_imu();
-    HAL_Delay(10);
+    HAL_Delay(1);
     HAL_SPI_Transmit(&hspi2, tx_data, 2, HAL_MAX_DELAY);
-    HAL_Delay(10);
+    HAL_Delay(1);
     deactivate_imu();
 }
 
@@ -731,13 +737,34 @@ void init_imu(void) {
  * @return Bearing in degrees (0-360°, where 0/360° is North)
  */
 float calculateBearing(int16_t accel[3], int16_t mag[3]) {
-    float ax = (float)accel[0];
-    float ay = (float)accel[1];
-    float az = (float)accel[2];
+    // Store new samples in history arrays
+    for (int i = 0; i < 3; i++) {
+        accel_history[history_index][i] = accel[i];
+        mag_history[history_index][i] = mag[i];
+    }
     
-    float mx = (float)mag[0];
-    float my = (float)mag[1];
-    float mz = (float)mag[2];
+    // Move to next position in circular buffer
+    history_index = (history_index + 1) % ROLLING_AVG_SAMPLES;
+    
+    // Calculate averages from history
+    float avg_accel[3] = {0.0f};
+    float avg_mag[3] = {0.0f};
+    
+    for (int i = 0; i < ROLLING_AVG_SAMPLES; i++) {
+        for (int j = 0; j < 3; j++) {
+            avg_accel[j] += accel_history[i][j] / (float)ROLLING_AVG_SAMPLES;
+            avg_mag[j] += mag_history[i][j] / (float)ROLLING_AVG_SAMPLES;
+        }
+    }
+    
+    // Use averaged values for bearing calculation
+    float ax = avg_accel[0];
+    float ay = avg_accel[1];
+    float az = avg_accel[2];
+    
+    float mx = avg_mag[0];
+    float my = avg_mag[1];
+    float mz = avg_mag[2];
     
     // Calculate pitch and roll from accelerometer
     // Note: This assumes standard orientation where:
@@ -816,9 +843,9 @@ void read_imu_data(void) {
     const char* direction = getCardinalDirection(bearing);
     
     // Print the data
-    printToConsole("Accel: X=%d, Y=%d, Z=%d\r\n", accel[0], accel[1], accel[2]);
-    printToConsole("Gyro: X=%d, Y=%d, Z=%d\r\n", gyro[0], gyro[1], gyro[2]);
-    printToConsole("Mag: X=%d, Y=%d, Z=%d\r\n", mag_data[0], mag_data[1], mag_data[2]);
+    // printToConsole("Accel: X=%d, Y=%d, Z=%d\r\n", accel[0], accel[1], accel[2]);
+    // printToConsole("Gyro: X=%d, Y=%d, Z=%d\r\n", gyro[0], gyro[1], gyro[2]);
+    // printToConsole("Mag: X=%d, Y=%d, Z=%d\r\n", mag_data[0], mag_data[1], mag_data[2]);
     printToConsole("Bearing: %.1f° (%s)\r\n", bearing, direction);
 }
 
@@ -922,23 +949,23 @@ int main(void)
     // Run the current test
     switch (currentTest) {
       case TEST_IMU:
-        // reg bank select, page 54
-        HAL_GPIO_WritePin(ICM_CS_PORT, ICM_CS_PIN, GPIO_PIN_RESET);
-        uint8_t reg = 0x7F;
-        uint8_t data = 0;
-        HAL_SPI_Transmit(&hspi2, &reg, 1, 100);
-        HAL_SPI_Transmit(&hspi2, &data, 1, 100);
-        HAL_GPIO_WritePin(ICM_CS_PORT, ICM_CS_PIN, GPIO_PIN_SET);
-        HAL_Delay(100);
+        // // reg bank select, page 54
+        // HAL_GPIO_WritePin(ICM_CS_PORT, ICM_CS_PIN, GPIO_PIN_RESET);
+        // uint8_t reg = 0x7F;
+        // uint8_t data = 0;
+        // HAL_SPI_Transmit(&hspi2, &reg, 1, 100);
+        // HAL_SPI_Transmit(&hspi2, &data, 1, 100);
+        // HAL_GPIO_WritePin(ICM_CS_PORT, ICM_CS_PIN, GPIO_PIN_SET);
+        // HAL_Delay(100);
 
-        // WHO AM I REGISTER, PAGE 36
-        HAL_GPIO_WritePin(ICM_CS_PORT, ICM_CS_PIN, GPIO_PIN_RESET);
-        reg = 0x00 | 0x80;
-        HAL_SPI_Transmit(&hspi2, &reg, 1, 100);
-        HAL_SPI_Receive(&hspi2, &data, 1, 100);
-        printToConsole("WHO AM I: %02X\r\n", data);
-        HAL_GPIO_WritePin(ICM_CS_PORT, ICM_CS_PIN, GPIO_PIN_SET);
-        HAL_Delay(100);
+        // // WHO AM I REGISTER, PAGE 36
+        // HAL_GPIO_WritePin(ICM_CS_PORT, ICM_CS_PIN, GPIO_PIN_RESET);
+        // reg = 0x00 | 0x80;
+        // HAL_SPI_Transmit(&hspi2, &reg, 1, 100);
+        // HAL_SPI_Receive(&hspi2, &data, 1, 100);
+        // printToConsole("WHO AM I: %02X\r\n", data);
+        // HAL_GPIO_WritePin(ICM_CS_PORT, ICM_CS_PIN, GPIO_PIN_SET);
+        // HAL_Delay(100);
 
         // ICM READ DATA, PAGE 42
         // HAL_GPIO_WritePin(ICM_CS_PORT, ICM_CS_PIN, GPIO_PIN_RESET);
