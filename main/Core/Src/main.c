@@ -81,6 +81,11 @@ static char* tx_2 = "Hello World";
 // Magnetometer data storage
 int16_t mag_data[3];
 
+// Define magnetic declination for your location
+// This is the angle between magnetic north and true north
+// Look up the value for your area: https://www.ngdc.noaa.gov/geomag/calculators/magcalc.shtml
+#define MAGNETIC_DECLINATION_DEG -4.48f  // Purdue University's Magnetic Declination
+
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -721,9 +726,62 @@ void init_imu(void) {
     }
 }
 
+/**
+ * Calculate bearing using accelerometer and magnetometer data
+ * @return Bearing in degrees (0-360°, where 0/360° is North)
+ */
+float calculateBearing(int16_t accel[3], int16_t mag[3]) {
+    float ax = (float)accel[0];
+    float ay = (float)accel[1];
+    float az = (float)accel[2];
+    
+    float mx = (float)mag[0];
+    float my = (float)mag[1];
+    float mz = (float)mag[2];
+    
+    // Calculate pitch and roll from accelerometer
+    // Note: This assumes standard orientation where:
+    // +X points right, +Y points forward, +Z points up
+    float pitch = atan2(ay, sqrt(ax*ax + az*az));
+    float roll = atan2(-ax, az);
+    
+    // Tilt-compensate the magnetometer readings
+    float mx_comp = mx * cos(pitch) + mz * sin(pitch);
+    float my_comp = mx * sin(roll) * sin(pitch) + my * cos(roll) - mz * sin(roll) * cos(pitch);
+    
+    // Calculate heading in radians
+    float heading = atan2(my_comp, mx_comp);
+    
+    // Convert to degrees
+    heading = heading * 180.0f / M_PI;
+    
+    // Add declination correction
+    heading += MAGNETIC_DECLINATION_DEG;
+    
+    // Normalize to 0-360 degrees
+    if (heading < 0) {
+        heading += 360.0f;
+    } else if (heading >= 360.0f) {
+        heading -= 360.0f;
+    }
+    
+    return heading;
+}
+
+/**
+ * Get a cardinal direction name from a bearing
+ * @param bearing The bearing in degrees (0-360)
+ * @return String with cardinal direction
+ */
+const char* getCardinalDirection(float bearing) {
+    const char* directions[] = {"N", "NE", "E", "SE", "S", "SW", "W", "NW"};
+    int index = (int)round(bearing / 45.0f) % 8;
+    return directions[index];
+}
+
+// Update the read_imu_data function to include bearing calculation
 void read_imu_data(void) {
-    int16_t accel_x, accel_y, accel_z;
-    int16_t gyro_x, gyro_y, gyro_z;
+    int16_t accel[3], gyro[3];
     
     // Read accelerometer data
     uint8_t accel_x_h = SPI_Read(ACCEL_XOUT_H);
@@ -742,21 +800,26 @@ void read_imu_data(void) {
     uint8_t gyro_z_l = SPI_Read(GYRO_ZOUT_L);
     
     // Combine high and low bytes
-    accel_x = (int16_t)((accel_x_h << 8) | accel_x_l);
-    accel_y = (int16_t)((accel_y_h << 8) | accel_y_l);
-    accel_z = (int16_t)((accel_z_h << 8) | accel_z_l);
+    accel[0] = (int16_t)((accel_x_h << 8) | accel_x_l);
+    accel[1] = (int16_t)((accel_y_h << 8) | accel_y_l);
+    accel[2] = (int16_t)((accel_z_h << 8) | accel_z_l);
     
-    gyro_x = (int16_t)((gyro_x_h << 8) | gyro_x_l);
-    gyro_y = (int16_t)((gyro_y_h << 8) | gyro_y_l);
-    gyro_z = (int16_t)((gyro_z_h << 8) | gyro_z_l);
+    gyro[0] = (int16_t)((gyro_x_h << 8) | gyro_x_l);
+    gyro[1] = (int16_t)((gyro_y_h << 8) | gyro_y_l);
+    gyro[2] = (int16_t)((gyro_z_h << 8) | gyro_z_l);
     
     // Read magnetometer data
     ICM_ReadMag(mag_data);
     
+    // Calculate bearing
+    float bearing = calculateBearing(accel, mag_data);
+    const char* direction = getCardinalDirection(bearing);
+    
     // Print the data
-    printToConsole("Accel: X=%d, Y=%d, Z=%d\r\n", accel_x, accel_y, accel_z);
-    printToConsole("Gyro: X=%d, Y=%d, Z=%d\r\n", gyro_x, gyro_y, gyro_z);
+    printToConsole("Accel: X=%d, Y=%d, Z=%d\r\n", accel[0], accel[1], accel[2]);
+    printToConsole("Gyro: X=%d, Y=%d, Z=%d\r\n", gyro[0], gyro[1], gyro[2]);
     printToConsole("Mag: X=%d, Y=%d, Z=%d\r\n", mag_data[0], mag_data[1], mag_data[2]);
+    printToConsole("Bearing: %.1f° (%s)\r\n", bearing, direction);
 }
 
 /* USER CODE END 0 */
