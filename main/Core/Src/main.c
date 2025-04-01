@@ -1147,8 +1147,8 @@ int main(void)
     printToConsole("Robot Should Turn %s by %.1f degrees\r\n\n\n", difference > 0 ? "left" : "right", fabs(difference));
 
     // Adjust the heading 
-    AdjustHeading(bearing, gnss_vector.bearing, 50);
-    HAL_Delay(100);
+    AdjustHeading(bearing, gnss_vector.bearing, 100);
+    HAL_Delay(1000);
   }
   /* USER CODE END 3 */
 }
