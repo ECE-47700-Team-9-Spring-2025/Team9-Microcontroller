@@ -711,7 +711,7 @@ void init_imu(void) {
         ICM_InitMag();
         
         printToConsole("ICM-20948 configured successfully with magnetometer!\r\n");
-    } else {
+            } else {
         printToConsole("Error: Unknown device ID or communication failure!\r\n");
         printToConsole("Trying alternative initialization...\r\n");
         
@@ -848,6 +848,77 @@ float read_imu_data(void) {
     return bearing;
 }
 
+
+
+
+bool sendATCommand(const char* command, uint32_t timeout) {
+    char response[32] = {0};
+    
+    // Clear the RX buffer first
+    memset(rx_buf, 0, sizeof(rx_buf));
+    
+    // Set up reception
+    HAL_UART_Receive_DMA(&huart1, rx_buf, sizeof(rx_buf));
+    
+    // Send command
+    HAL_UART_Transmit(&huart1, (uint8_t*)command, strlen(command), HAL_MAX_DELAY);
+    printToConsole("Sent: %s", command);
+    
+    // Wait for response (will be caught in callback)
+    HAL_Delay(timeout);
+    
+    // Check if we got "OK" in the response
+    return (strstr((char*)rx_buf, "OK") != NULL);
+}
+
+
+// Configure HM-10 module with specific settings for your app
+bool configureHM10() {
+    printToConsole("\r\n=== Configuring HM-10 BLE Module ===\r\n");
+    
+    // Basic test to ensure module is responding
+    if (!sendATCommand("AT\r\n", 300)) {
+        printToConsole("ERROR: HM-10 not responding to AT command");
+        return false;
+    }
+    
+    // Set a recognizable name for your device
+    sendATCommand("AT+NAMEROBOTBLE\r\n", 300);
+    
+    // For most applications, you want peripheral mode so apps can connect to it
+    sendATCommand("AT+ROLE0\r\n", 300); // 0 = Peripheral, 1 = Central
+    
+    // Set the work mode
+    sendATCommand("AT+MODE2\r\n", 300); // 0 = Transmission, 1 = PIO collection, 2 = Remote control
+    
+    // Make the device connectable/discoverable
+    sendATCommand("AT+IMME1\r\n", 300); // 0 = Work immediately, 1 = Wait for command
+    sendATCommand("AT+DISC?\r\n", 300); // Check discovery status
+    
+    // Set the advertising interval (lower = more discoverable but higher power consumption)
+    sendATCommand("AT+ADVI5\r\n", 300); // 0-9, default is 5 (100ms * (1+val))
+    
+    // Start advertising so it can be discovered
+    sendATCommand("AT+START\r\n", 300);
+    
+    printToConsole("HM-10 Configuration completed\r\n");
+    return true;
+}
+
+
+
+// Function to wait for and process Bluetooth response
+bool waitForBluetoothResponse(char* response, size_t responseSize, uint32_t timeout) {
+    memset(response, 0, responseSize);
+    HAL_StatusTypeDef status = HAL_UART_Receive(&huart1, (uint8_t*)response, responseSize-1, timeout);
+    
+    if (status == HAL_OK && strlen(response) > 0) {
+        printToConsole("BT Response: %s", response);
+        return true;
+    }
+    return false;
+}
+
 /* USER CODE END 0 */
 
 /**
@@ -892,10 +963,12 @@ int main(void)
   HAL_UART_Transmit_DMA(&huart1, (uint8_t*)tx_1, size);
   printToConsole("Sent: %s", tx_1);
 
-  // Initialize DMA for UART6 reception
-  HAL_UARTEx_ReceiveToIdle_DMA(&huart6, uartRxBuffer, UART_RX_BUFFER_SIZE);
-  __HAL_DMA_DISABLE_IT(huart6.hdmarx, DMA_IT_HT); // Disable Half Transfer interrupt
-  printToConsole("DMA Initialized!\r\n");
+
+
+//   // Initialize DMA for UART6 reception
+//   HAL_UARTEx_ReceiveToIdle_DMA(&huart6, uartRxBuffer, UART_RX_BUFFER_SIZE);
+//   __HAL_DMA_DISABLE_IT(huart6.hdmarx, DMA_IT_HT); // Disable Half Transfer interrupt
+//   printToConsole("DMA Initialized!\r\n");
 
   // Test USART6 reception
   // testUSART6Reception();
@@ -909,104 +982,111 @@ int main(void)
 
     /* USER CODE BEGIN 3 */
     // Calculate the vector between the two GPS points
-
-    // GPS test code
-    char nmeaBuffer[256];
-    if (getNMEASentence(nmeaBuffer, sizeof(nmeaBuffer))) {
-      // Debug raw NMEA sentence
-      // printToConsole("\r\n--- Raw NMEA Sentence ---\r\n");
-      // printToConsole("Length: %d bytes\r\n", strlen(nmeaBuffer));
-      // printToConsole("Content: %s", nmeaBuffer);
-      
-      if (strstr(nmeaBuffer, "$GNRMC")) {
-        printToConsole("\r\n=== GNRMC Message Detected ===\r\n");
-        
-        // Debug each field before parsing
-        char *saveptr;
-        char *token = strtok_r(nmeaBuffer, ",", &saveptr);
-        int fieldIndex = 0;
-        
-        while (token != NULL) {
-          switch(fieldIndex) {
-            case 0: printToConsole("Message ID: %s\r\n", token); break;
-            case 1: printToConsole("UTC Time: %s\r\n", token); break;
-            case 2: printToConsole("Status: %s (%s)\r\n", token, 
-                    (token[0] == 'A') ? "Active" : "Void"); break;
-            case 3: printToConsole("Latitude: %s\r\n", token); break;
-            case 4: printToConsole("N/S Indicator: %s\r\n", token); break;
-            case 5: printToConsole("Longitude: %s\r\n", token); break;
-            case 6: printToConsole("E/W Indicator: %s\r\n", token); break;
-            case 7: printToConsole("Speed (knots): %s\r\n", token); break;
-            case 8: printToConsole("Course: %s\r\n", token); break;
-            case 9: printToConsole("Date: %s\r\n", token); break;
-            default: printToConsole("Field %d: %s\r\n", fieldIndex, token);
-          }
-          token = strtok_r(NULL, ",", &saveptr);
-          fieldIndex++;
-        }
-        
-        printToConsole("Total fields: %d (expecting 12-13)\r\n", fieldIndex);
-        
-        // Try to parse with M8Q_ParseGNRMC
-        if (M8Q_ParseGNRMC(nmeaBuffer, &gps_data)) {
-          printToConsole("\r\nParsing Successful!\r\n");
-          printToConsole("Time: %02d:%02d:%02d UTC\r\n", 
-              gps_data.hours, gps_data.minutes, gps_data.seconds);
-          printToConsole("Fix Valid: %s\r\n", 
-              gps_data.fix_valid ? "Yes" : "No");
-          printToConsole("Position: %.6f%c, %.6f%c\r\n",
-              gps_data.latitude, gps_data.lat_direction,
-              gps_data.longitude, gps_data.lon_direction);
-          if (gps_data.speed_knots > 0) {
-            printToConsole("Speed: %.2f knots\r\n", gps_data.speed_knots);
-            printToConsole("Course: %.2f degrees\r\n", gps_data.course);
-          }
-        } else {
-          printToConsole("\r\nParsing Failed!\r\n");
-          printToConsole("Checksum validation: %s\r\n", 
-              (strchr(nmeaBuffer, '*') != NULL) ? "Present" : "Missing");
-        }
-        printToConsole("=========================\r\n");
-      }
-    } else {
-      printToConsole("No Microcontroller GPS data received! Using dummy data\r\n");
-      gps_data.latitude = 38;
-      gps_data.lat_direction = 'N';
-      gps_data.longitude = -123;
-      gps_data.lon_direction = 'W';
-      gps_data.speed_knots = 10.0;
-      gps_data.course = 270.0;
-      gps_data.fix_valid = true;
-    }
-
-    if (true) {
-      printToConsole("No Phone GPS Data Received! Using dummy phone GPS data\r\n");
-      phone_gps_data.latitude = 37;
-      phone_gps_data.lat_direction = 'N';
-      phone_gps_data.longitude = -122;
-      phone_gps_data.lon_direction = 'W';
-      phone_gps_data.speed_knots = 10.0;
-      phone_gps_data.course = 270.0;
-      phone_gps_data.fix_valid = true;
-    }
-
-    GNSSVector gnss_vector = calculateGNSSVector(gps_data, phone_gps_data);
-    printToConsole("Distance between points: %.2f meters\r\n", gnss_vector.distance);
-    printToConsole("Bearing between points: %.1f degrees\r\n", gnss_vector.bearing);
-    // Distance between points: 1418.02 meters
-    // Bearing between points: 218.4 degrees
-
-    float bearing = read_imu_data();
-    printToConsole("Bearing: %.1f degrees\r\n", bearing);
-    // Bearing: 222.4 degrees
-
-    // Calculate the difference between the two bearings
-    float difference = bearing - gnss_vector.bearing;
-    printToConsole("Difference between bearings: %.1f degrees\r\n", difference);
-    // Difference between bearings: 4.0 degrees
     
-    printToConsole("Robot Should Turn %s by %.1f degrees\r\n\n\n", difference > 0 ? "left" : "right", fabs(difference));
-    HAL_Delay(1000);
+    // // GPS test code
+    // char nmeaBuffer[256];
+    // if (getNMEASentence(nmeaBuffer, sizeof(nmeaBuffer))) {
+    //   // Debug raw NMEA sentence
+    //   // printToConsole("\r\n--- Raw NMEA Sentence ---\r\n");
+    //   // printToConsole("Length: %d bytes\r\n", strlen(nmeaBuffer));
+    //   // printToConsole("Content: %s", nmeaBuffer);
+      
+    //   if (strstr(nmeaBuffer, "$GNRMC")) {
+    //     printToConsole("\r\n=== GNRMC Message Detected ===\r\n");
+        
+    //     // Debug each field before parsing
+    //     char *saveptr;
+    //     char *token = strtok_r(nmeaBuffer, ",", &saveptr);
+    //     int fieldIndex = 0;
+        
+    //     while (token != NULL) {
+    //       switch(fieldIndex) {
+    //         case 0: printToConsole("Message ID: %s\r\n", token); break;
+    //         case 1: printToConsole("UTC Time: %s\r\n", token); break;
+    //         case 2: printToConsole("Status: %s (%s)\r\n", token, 
+    //                 (token[0] == 'A') ? "Active" : "Void"); break;
+    //         case 3: printToConsole("Latitude: %s\r\n", token); break;
+    //         case 4: printToConsole("N/S Indicator: %s\r\n", token); break;
+    //         case 5: printToConsole("Longitude: %s\r\n", token); break;
+    //         case 6: printToConsole("E/W Indicator: %s\r\n", token); break;
+    //         case 7: printToConsole("Speed (knots): %s\r\n", token); break;
+    //         case 8: printToConsole("Course: %s\r\n", token); break;
+    //         case 9: printToConsole("Date: %s\r\n", token); break;
+    //         default: printToConsole("Field %d: %s\r\n", fieldIndex, token);
+    //       }
+    //       token = strtok_r(NULL, ",", &saveptr);
+    //       fieldIndex++;
+    //     }
+        
+    //     printToConsole("Total fields: %d (expecting 12-13)\r\n", fieldIndex);
+        
+    //     // Try to parse with M8Q_ParseGNRMC
+    //     if (M8Q_ParseGNRMC(nmeaBuffer, &gps_data)) {
+    //       printToConsole("\r\nParsing Successful!\r\n");
+    //       printToConsole("Time: %02d:%02d:%02d UTC\r\n", 
+    //           gps_data.hours, gps_data.minutes, gps_data.seconds);
+    //       printToConsole("Fix Valid: %s\r\n", 
+    //           gps_data.fix_valid ? "Yes" : "No");
+    //       printToConsole("Position: %.6f%c, %.6f%c\r\n",
+    //           gps_data.latitude, gps_data.lat_direction,
+    //           gps_data.longitude, gps_data.lon_direction);
+    //       if (gps_data.speed_knots > 0) {
+    //         printToConsole("Speed: %.2f knots\r\n", gps_data.speed_knots);
+    //         printToConsole("Course: %.2f degrees\r\n", gps_data.course);
+    //       }
+    //     } else {
+    //       printToConsole("\r\nParsing Failed!\r\n");
+    //       printToConsole("Checksum validation: %s\r\n", 
+    //           (strchr(nmeaBuffer, '*') != NULL) ? "Present" : "Missing");
+    //     }
+    //     printToConsole("=========================\r\n");
+    //   }
+    // } else {
+    //   printToConsole("No Microcontroller GPS data received! Using dummy data\r\n");
+    //   gps_data.latitude = 38;
+    //   gps_data.lat_direction = 'N';
+    //   gps_data.longitude = -123;
+    //   gps_data.lon_direction = 'W';
+    //   gps_data.speed_knots = 10.0;
+    //   gps_data.course = 270.0;
+    //   gps_data.fix_valid = true;
+    // }
+
+    // if (true) {
+    //   printToConsole("No Phone GPS Data Received! Using dummy phone GPS data\r\n");
+    //   phone_gps_data.latitude = 37;
+    //   phone_gps_data.lat_direction = 'N';
+    //   phone_gps_data.longitude = -122;
+    //   phone_gps_data.lon_direction = 'W';
+    //   phone_gps_data.speed_knots = 10.0;
+    //   phone_gps_data.course = 270.0;
+    //   phone_gps_data.fix_valid = true;
+    // }
+
+    // GNSSVector gnss_vector = calculateGNSSVector(gps_data, phone_gps_data);
+    // printToConsole("Distance between points: %.2f meters\r\n", gnss_vector.distance);
+    // printToConsole("Bearing between points: %.1f degrees\r\n", gnss_vector.bearing);
+    // // Distance between points: 1418.02 meters
+    // // Bearing between points: 218.4 degrees
+
+    // float bearing = read_imu_data();
+    // printToConsole("Bearing: %.1f degrees\r\n", bearing);
+    // // Bearing: 222.4 degrees
+
+    // // Calculate the difference between the two bearings
+    // float difference = bearing - gnss_vector.bearing;
+    // printToConsole("Difference between bearings: %.1f degrees\r\n", difference);
+    // // Difference between bearings: 4.0 degrees
+    
+    // printToConsole("Robot Should Turn %s by %.1f degrees\r\n\n\n", difference > 0 ? "left" : "right", fabs(difference));
+    
+
+
+    
+    // Bluetooth Test Code - Send GPS position to Bluetooth every 2 seconds
+
+    
+    HAL_Delay(500); // Small delay to prevent flooding
   }
   /* USER CODE END 3 */
 }
