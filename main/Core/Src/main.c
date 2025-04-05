@@ -30,7 +30,16 @@
 
 static uint8_t rx_buf[20];
 static char* tx_1 = "AT";
-static char* tx_2 = "Hello World";
+// Define setup commands for HM-10 Bluetooth module
+static char* setup_cmds[] = {
+    "AT+ROLE0",      // Set device as slave/peripheral (needed for discovery by apps)
+    "AT+IMME1",      // Start in command mode rather than auto-connecting mode
+    "AT+NOTI1",      // Enable connection status notifications (OK+CONN, OK+LOST)
+    "AT+NOTP1",      // Show MAC addresses in notifications for better debugging
+    "AT+NAMEfairwayfinder", // Set the Bluetooth advertising name (visible to phones)
+    "AT+FLAG0",      // Enable advertising flag - required for device to be discoverable
+    "AT+RESET"       // Reset the module to apply all settings
+};
 
 // ICM-20948 Register addresses - Updated for correct bank 0 addresses
 #define WHO_AM_I_REG     0x00    
@@ -426,6 +435,72 @@ bool printCurrentGpsOutput(void) {
         return false;
     }
 }
+// Function to initialize HM-10 BLE module
+void initBluetooth(void) {
+    printToConsole("\r\n== Starting HM-10 Bluetooth Initialization ==\r\n");
+    uint8_t response_received = 0;
+    
+    // Initial check - send AT to see if module responds
+    printToConsole("Sending test command: AT\r\n");
+    int size = strlen(tx_1);
+    HAL_UART_Receive_DMA(&huart1, rx_buf, size);
+    HAL_UART_Transmit(&huart1, (uint8_t*)tx_1, size, HAL_MAX_DELAY);
+    
+    // Wait for response with timeout
+    uint32_t startTime = HAL_GetTick();
+    while (!response_received && (HAL_GetTick() - startTime < 5000)) {
+        if (strstr((char*)rx_buf, "OK")) {
+            response_received = 1;
+            printToConsole("\r\nBLE module responded OK to test command\r\n");
+        }
+        HAL_Delay(50);
+    }
+    
+    if (!response_received) {
+        printToConsole("ERROR: No response from BLE module! Check connections\r\n");
+        return;
+    }
+    
+    // Process each setup command
+    for (int i = 0; i < sizeof(setup_cmds)/sizeof(setup_cmds[0]); i++) {
+        // Cancel any ongoing reception
+        HAL_UART_AbortReceive(&huart1);
+
+        // Clear response buffer
+        memset(rx_buf, 0, sizeof(rx_buf));
+        response_received = 0;
+        
+        // Get command length
+        size = strlen(setup_cmds[i]);
+        
+        printToConsole("Sending: %s\r\n", setup_cmds[i]);
+        
+        // Start reception before sending command
+        HAL_UART_Receive_DMA(&huart1, rx_buf, size);
+        HAL_UART_Transmit(&huart1, (uint8_t*)setup_cmds[i], size, HAL_MAX_DELAY);
+        
+        // Wait for response with timeout (slightly longer for RESET command)
+        int timeout = (strstr(setup_cmds[i], "RESET") != NULL) ? 10000 : 10000;
+        startTime = HAL_GetTick();
+        
+        while (!response_received && (HAL_GetTick() - startTime < timeout)) {
+            if (strstr((char*)rx_buf, "OK")) {
+                response_received = 1;
+                printToConsole("Response: %s\r\n", rx_buf);
+            }
+            HAL_Delay(50);
+        }
+        
+        if (!response_received) {
+            printToConsole("WARNING: No response to command: %s\r\n", setup_cmds[i]);
+        }
+        
+        // Add delay between commands
+        HAL_Delay(1000);
+    }
+    
+    printToConsole("== HM-10 Bluetooth Initialization Complete ==\r\n");
+}
 
 bool getNMEASentence(char *buffer, size_t maxSize) {
     uint16_t startPos = UINT16_MAX;
@@ -495,7 +570,6 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
     if (huart->Instance == USART6) {
         // Debug output to confirm callback is working
         // printToConsole("DMA received %d bytes\r\n", Size);
-        
         // Calculate the new head position
         uint16_t newHead = (rxHead + Size) % UART_RX_BUFFER_SIZE;
         rxHead = newHead;
@@ -515,14 +589,12 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
 
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
-    if(huart == &huart1) {
         // Log the received data
-        printToConsole("Received (callback): %s", rx_buf);
-        
+        printToConsole("\r\nReceived (callback): %s", rx_buf);
         // Restart the reception for the next data
         HAL_UART_Receive_DMA(&huart1, rx_buf, sizeof(rx_buf));
-    }
 }
+
 
 // Set PWM duty cycle
 // void PWM_SetDutyCycle(TIM_HandleTypeDef *htim, uint32_t Channel, uint16_t dutyCycle) {
@@ -850,75 +922,6 @@ float read_imu_data(void) {
 
 
 
-
-bool sendATCommand(const char* command, uint32_t timeout) {
-    char response[32] = {0};
-    
-    // Clear the RX buffer first
-    memset(rx_buf, 0, sizeof(rx_buf));
-    
-    // Set up reception
-    HAL_UART_Receive_DMA(&huart1, rx_buf, sizeof(rx_buf));
-    
-    // Send command
-    HAL_UART_Transmit(&huart1, (uint8_t*)command, strlen(command), HAL_MAX_DELAY);
-    printToConsole("Sent: %s", command);
-    
-    // Wait for response (will be caught in callback)
-    HAL_Delay(timeout);
-    
-    // Check if we got "OK" in the response
-    return (strstr((char*)rx_buf, "OK") != NULL);
-}
-
-
-// Configure HM-10 module with specific settings for your app
-bool configureHM10() {
-    printToConsole("\r\n=== Configuring HM-10 BLE Module ===\r\n");
-    
-    // Basic test to ensure module is responding
-    if (!sendATCommand("AT\r\n", 300)) {
-        printToConsole("ERROR: HM-10 not responding to AT command");
-        return false;
-    }
-    
-    // Set a recognizable name for your device
-    sendATCommand("AT+NAMEROBOTBLE\r\n", 300);
-    
-    // For most applications, you want peripheral mode so apps can connect to it
-    sendATCommand("AT+ROLE0\r\n", 300); // 0 = Peripheral, 1 = Central
-    
-    // Set the work mode
-    sendATCommand("AT+MODE2\r\n", 300); // 0 = Transmission, 1 = PIO collection, 2 = Remote control
-    
-    // Make the device connectable/discoverable
-    sendATCommand("AT+IMME1\r\n", 300); // 0 = Work immediately, 1 = Wait for command
-    sendATCommand("AT+DISC?\r\n", 300); // Check discovery status
-    
-    // Set the advertising interval (lower = more discoverable but higher power consumption)
-    sendATCommand("AT+ADVI5\r\n", 300); // 0-9, default is 5 (100ms * (1+val))
-    
-    // Start advertising so it can be discovered
-    sendATCommand("AT+START\r\n", 300);
-    
-    printToConsole("HM-10 Configuration completed\r\n");
-    return true;
-}
-
-
-
-// Function to wait for and process Bluetooth response
-bool waitForBluetoothResponse(char* response, size_t responseSize, uint32_t timeout) {
-    memset(response, 0, responseSize);
-    HAL_StatusTypeDef status = HAL_UART_Receive(&huart1, (uint8_t*)response, responseSize-1, timeout);
-    
-    if (status == HAL_OK && strlen(response) > 0) {
-        printToConsole("BT Response: %s", response);
-        return true;
-    }
-    return false;
-}
-
 /* USER CODE END 0 */
 
 /**
@@ -957,11 +960,11 @@ int main(void)
   MX_SPI2_Init();
   /* USER CODE BEGIN 2 */
 
+  memset(rx_buf, 0, sizeof(rx_buf));
+  initBluetooth();
+
   int size = strlen(tx_1);
   init_imu();
-  HAL_UART_Receive_DMA(&huart1, rx_buf, size);
-  HAL_UART_Transmit_DMA(&huart1, (uint8_t*)tx_1, size);
-  printToConsole("Sent: %s", tx_1);
 
 
 
@@ -1085,8 +1088,7 @@ int main(void)
     
     // Bluetooth Test Code - Send GPS position to Bluetooth every 2 seconds
 
-    
-    HAL_Delay(500); // Small delay to prevent flooding
+    HAL_Delay(1000); // Small delay to prevent flooding
   }
   /* USER CODE END 3 */
 }
