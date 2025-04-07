@@ -32,13 +32,18 @@ static uint8_t rx_buf[20];
 static char* tx_1 = "AT";
 // Define setup commands for HM-10 Bluetooth module
 static char* setup_cmds[] = {
-    "AT+ROLE0",      // Set device as slave/peripheral (needed for discovery by apps)
-    "AT+IMME1",      // Start in command mode rather than auto-connecting mode
-    "AT+NOTI1",      // Enable connection status notifications (OK+CONN, OK+LOST)
-    "AT+NOTP1",      // Show MAC addresses in notifications for better debugging
-    "AT+NAMEfairwayfinder", // Set the Bluetooth advertising name (visible to phones)
-    "AT+FLAG0",      // Enable advertising flag - required for device to be discoverable
-    "AT+RESET"       // Reset the module to apply all settings
+    "AT+ROLE0",      // Set as peripheral
+    "AT+ADVI3",      // Set advertising interval to 318.75ms (better compatibility)
+    "AT+ADTY0",      // Allow advertising and connections
+    "AT+FLAG1",      // Enable advertising flag (critical for iOS visibility)
+    "AT+NAMEFairway",
+    "AT+SHOW1",
+    "AT+IBEA0",
+    "AT+UUID0xFFE0", // Set standard service UUID
+    "AT+CHAR0xFFE1", // Set standard characteristic UUID
+    "AT+POWE3",      // Max transmit power (6dbm)
+    "AT+RESET",      // Reboot module
+    "AT+NAME?"       // Verify name
 };
 
 // ICM-20948 Register addresses - Updated for correct bank 0 addresses
@@ -435,6 +440,23 @@ bool printCurrentGpsOutput(void) {
         return false;
     }
 }
+
+void resetBluetoothModule(void) {
+    // 1. Send software reset command
+    char reset_cmd[] = "AT+RESET\r\n";
+    HAL_UART_Transmit(&huart1, (uint8_t*)reset_cmd, strlen(reset_cmd), HAL_MAX_DELAY);
+    
+    // 2. Wait for full reboot (critical!)
+    HAL_Delay(2000);  // HM-10 needs at least 1.5 seconds to reboot
+    
+    // 3. Clear all existing configurations
+    char clear_cmd[] = "AT+RENEW\r\n";  // Restore factory defaults
+    HAL_UART_Transmit(&huart1, (uint8_t*)clear_cmd, strlen(clear_cmd), HAL_MAX_DELAY);
+    HAL_Delay(1000);
+    
+    // 4. Clear receive buffer
+    memset(rx_buf, 0, sizeof(rx_buf));
+}
 // Function to initialize HM-10 BLE module
 void initBluetooth(void) {
     printToConsole("\r\n== Starting HM-10 Bluetooth Initialization ==\r\n");
@@ -476,7 +498,7 @@ void initBluetooth(void) {
         printToConsole("Sending: %s\r\n", setup_cmds[i]);
         
         // Start reception before sending command
-        HAL_UART_Receive_DMA(&huart1, rx_buf, size);
+        HAL_UART_Receive_DMA(&huart1, rx_buf, sizeof(rx_buf));
         HAL_UART_Transmit(&huart1, (uint8_t*)setup_cmds[i], size, HAL_MAX_DELAY);
         
         // Wait for response with timeout (slightly longer for RESET command)
@@ -960,11 +982,12 @@ int main(void)
   MX_SPI2_Init();
   /* USER CODE BEGIN 2 */
 
-  memset(rx_buf, 0, sizeof(rx_buf));
+  resetBluetoothModule();
+  HAL_Delay(1000);
   initBluetooth();
 
   int size = strlen(tx_1);
-  init_imu();
+//   init_imu();
 
 
 
@@ -1088,7 +1111,7 @@ int main(void)
     
     // Bluetooth Test Code - Send GPS position to Bluetooth every 2 seconds
 
-    HAL_Delay(1000); // Small delay to prevent flooding
+    HAL_Delay(5000); // Small delay to prevent flooding
   }
   /* USER CODE END 3 */
 }
