@@ -141,6 +141,11 @@ uint8_t uartRxBuffer[UART_RX_BUFFER_SIZE];
 volatile uint16_t rxHead = 0;
 volatile uint16_t searchPos = 0;
 
+// Add this for Bluetooth GPS reception - 26 bytes as per the app's specification
+#define BT_GPS_DATA_SIZE 26
+uint8_t bt_gps_buffer[BT_GPS_DATA_SIZE];
+volatile bool bt_gps_data_ready = false;
+
 // Add these global variables for rolling average
 #define ROLLING_AVG_SAMPLES 3
 static int16_t accel_history[ROLLING_AVG_SAMPLES][3] = {0};
@@ -157,7 +162,8 @@ static void MX_USART6_UART_Init(void);
 static void MX_USART1_UART_Init(void);
 static void MX_SPI2_Init(void);
 /* USER CODE BEGIN PFP */
-
+float bytesToFloat(uint8_t* bytes);
+void parsePhoneGPSData(uint8_t* buffer, GPS_Data* gps);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -611,12 +617,24 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
 
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
-        // Log the received data
-        printToConsole("\r\nReceived (callback): %s", rx_buf);
-        // Restart the reception for the next data
-        HAL_UART_Receive_DMA(&huart1, rx_buf, sizeof(rx_buf));
+    if (huart->Instance == USART1) {
+        // Check if we have received GPS data from the app (26 bytes)
+        if (huart->RxXferSize == BT_GPS_DATA_SIZE) {
+            // Process the received GPS data
+            parsePhoneGPSData(bt_gps_buffer, &phone_gps_data);
+            bt_gps_data_ready = true;
+            
+            // Debug output (optional)
+            printToConsole("\r\nBluetooth GPS data processed!\r\n");
+        } else {
+            // Original behavior for other data
+            printToConsole("\r\nReceived (callback): %s", rx_buf);
+        }
+        
+        // Restart the reception for GPS data
+        HAL_UART_Receive_DMA(&huart1, bt_gps_buffer, BT_GPS_DATA_SIZE);
+    }
 }
-
 
 // Set PWM duty cycle
 // void PWM_SetDutyCycle(TIM_HandleTypeDef *htim, uint32_t Channel, uint16_t dutyCycle) {
@@ -942,7 +960,62 @@ float read_imu_data(void) {
     return bearing;
 }
 
+/**
+ * Convert bytes to float considering potential endianness differences
+ * @param bytes Pointer to 4 bytes of data
+ * @return Converted float value
+ */
+float bytesToFloat(uint8_t* bytes) {
+    float result;
+    memcpy(&result, bytes, 4);
+    return result;
+}
 
+/**
+ * Parse binary GPS data received from phone app via Bluetooth
+ * @param buffer 26-byte buffer containing GPS data
+ * @param gps Pointer to GPS_Data structure to populate
+ */
+void parsePhoneGPSData(uint8_t* buffer, GPS_Data* gps) {
+    // Parse time
+    gps->hours = buffer[0];
+    gps->minutes = buffer[1];
+    gps->seconds = buffer[2];
+    
+    // Parse date
+    gps->day = buffer[3];
+    gps->month = buffer[4];
+    gps->year = buffer[5] | (buffer[6] << 8); // Little-endian
+    
+    // Parse latitude (4 bytes IEEE float)
+    gps->latitude = bytesToFloat(&buffer[7]);
+    gps->lat_direction = buffer[11];
+    
+    // Parse longitude (4 bytes IEEE float)
+    gps->longitude = bytesToFloat(&buffer[12]);
+    gps->lon_direction = buffer[16];
+    
+    // Parse speed (4 bytes IEEE float)
+    gps->speed_knots = bytesToFloat(&buffer[17]);
+    
+    // Parse course (4 bytes IEEE float)
+    gps->course = bytesToFloat(&buffer[21]);
+    
+    // Parse fix validity
+    gps->fix_valid = buffer[25] ? true : false;
+    
+    // Debug print
+    printToConsole("\r\n=== Phone GPS Data Received ===\r\n");
+    printToConsole("Time: %02d:%02d:%02d UTC\r\n", gps->hours, gps->minutes, gps->seconds);
+    printToConsole("Date: %02d/%02d/%04d\r\n", gps->day, gps->month, gps->year);
+    printToConsole("Position: %.6f%c, %.6f%c\r\n", 
+                   gps->latitude, gps->lat_direction,
+                   gps->longitude, gps->lon_direction);
+    printToConsole("Speed: %.2f knots, Course: %.2f degrees\r\n", 
+                   gps->speed_knots, gps->course);
+    printToConsole("Fix Valid: %s\r\n", gps->fix_valid ? "Yes" : "No");
+    printToConsole("================================\r\n");
+}
 
 /* USER CODE END 0 */
 
@@ -986,6 +1059,10 @@ int main(void)
   HAL_Delay(1000);
   initBluetooth();
 
+  // Start reception of GPS data from Bluetooth
+  HAL_UART_Receive_DMA(&huart1, bt_gps_buffer, BT_GPS_DATA_SIZE);
+  printToConsole("Bluetooth GPS reception initialized!\r\n");
+  
   int size = strlen(tx_1);
 //   init_imu();
 
@@ -1007,111 +1084,19 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-    // Calculate the vector between the two GPS points
-    
-    // // GPS test code
-    // char nmeaBuffer[256];
-    // if (getNMEASentence(nmeaBuffer, sizeof(nmeaBuffer))) {
-    //   // Debug raw NMEA sentence
-    //   // printToConsole("\r\n--- Raw NMEA Sentence ---\r\n");
-    //   // printToConsole("Length: %d bytes\r\n", strlen(nmeaBuffer));
-    //   // printToConsole("Content: %s", nmeaBuffer);
-      
-    //   if (strstr(nmeaBuffer, "$GNRMC")) {
-    //     printToConsole("\r\n=== GNRMC Message Detected ===\r\n");
+    // Process GPS data if available
+    if (bt_gps_data_ready) {
+        bt_gps_data_ready = false;
         
-    //     // Debug each field before parsing
-    //     char *saveptr;
-    //     char *token = strtok_r(nmeaBuffer, ",", &saveptr);
-    //     int fieldIndex = 0;
-        
-    //     while (token != NULL) {
-    //       switch(fieldIndex) {
-    //         case 0: printToConsole("Message ID: %s\r\n", token); break;
-    //         case 1: printToConsole("UTC Time: %s\r\n", token); break;
-    //         case 2: printToConsole("Status: %s (%s)\r\n", token, 
-    //                 (token[0] == 'A') ? "Active" : "Void"); break;
-    //         case 3: printToConsole("Latitude: %s\r\n", token); break;
-    //         case 4: printToConsole("N/S Indicator: %s\r\n", token); break;
-    //         case 5: printToConsole("Longitude: %s\r\n", token); break;
-    //         case 6: printToConsole("E/W Indicator: %s\r\n", token); break;
-    //         case 7: printToConsole("Speed (knots): %s\r\n", token); break;
-    //         case 8: printToConsole("Course: %s\r\n", token); break;
-    //         case 9: printToConsole("Date: %s\r\n", token); break;
-    //         default: printToConsole("Field %d: %s\r\n", fieldIndex, token);
-    //       }
-    //       token = strtok_r(NULL, ",", &saveptr);
-    //       fieldIndex++;
-    //     }
-        
-    //     printToConsole("Total fields: %d (expecting 12-13)\r\n", fieldIndex);
-        
-    //     // Try to parse with M8Q_ParseGNRMC
-    //     if (M8Q_ParseGNRMC(nmeaBuffer, &gps_data)) {
-    //       printToConsole("\r\nParsing Successful!\r\n");
-    //       printToConsole("Time: %02d:%02d:%02d UTC\r\n", 
-    //           gps_data.hours, gps_data.minutes, gps_data.seconds);
-    //       printToConsole("Fix Valid: %s\r\n", 
-    //           gps_data.fix_valid ? "Yes" : "No");
-    //       printToConsole("Position: %.6f%c, %.6f%c\r\n",
-    //           gps_data.latitude, gps_data.lat_direction,
-    //           gps_data.longitude, gps_data.lon_direction);
-    //       if (gps_data.speed_knots > 0) {
-    //         printToConsole("Speed: %.2f knots\r\n", gps_data.speed_knots);
-    //         printToConsole("Course: %.2f degrees\r\n", gps_data.course);
-    //       }
-    //     } else {
-    //       printToConsole("\r\nParsing Failed!\r\n");
-    //       printToConsole("Checksum validation: %s\r\n", 
-    //           (strchr(nmeaBuffer, '*') != NULL) ? "Present" : "Missing");
-    //     }
-    //     printToConsole("=========================\r\n");
-    //   }
-    // } else {
-    //   printToConsole("No Microcontroller GPS data received! Using dummy data\r\n");
-    //   gps_data.latitude = 38;
-    //   gps_data.lat_direction = 'N';
-    //   gps_data.longitude = -123;
-    //   gps_data.lon_direction = 'W';
-    //   gps_data.speed_knots = 10.0;
-    //   gps_data.course = 270.0;
-    //   gps_data.fix_valid = true;
-    // }
-
-    // if (true) {
-    //   printToConsole("No Phone GPS Data Received! Using dummy phone GPS data\r\n");
-    //   phone_gps_data.latitude = 37;
-    //   phone_gps_data.lat_direction = 'N';
-    //   phone_gps_data.longitude = -122;
-    //   phone_gps_data.lon_direction = 'W';
-    //   phone_gps_data.speed_knots = 10.0;
-    //   phone_gps_data.course = 270.0;
-    //   phone_gps_data.fix_valid = true;
-    // }
-
-    // GNSSVector gnss_vector = calculateGNSSVector(gps_data, phone_gps_data);
-    // printToConsole("Distance between points: %.2f meters\r\n", gnss_vector.distance);
-    // printToConsole("Bearing between points: %.1f degrees\r\n", gnss_vector.bearing);
-    // // Distance between points: 1418.02 meters
-    // // Bearing between points: 218.4 degrees
-
-    // float bearing = read_imu_data();
-    // printToConsole("Bearing: %.1f degrees\r\n", bearing);
-    // // Bearing: 222.4 degrees
-
-    // // Calculate the difference between the two bearings
-    // float difference = bearing - gnss_vector.bearing;
-    // printToConsole("Difference between bearings: %.1f degrees\r\n", difference);
-    // // Difference between bearings: 4.0 degrees
+        // Your code to use the GPS data can go here
+        // For example, calculating vectors between points
+        // or making navigation decisions
+    }
     
-    // printToConsole("Robot Should Turn %s by %.1f degrees\r\n\n\n", difference > 0 ? "left" : "right", fabs(difference));
+    // Rest of your existing code
+    // ... existing code ...
     
-
-
-    
-    // Bluetooth Test Code - Send GPS position to Bluetooth every 2 seconds
-
-    HAL_Delay(5000); // Small delay to prevent flooding
+    HAL_Delay(100); // Small delay to prevent CPU hogging
   }
   /* USER CODE END 3 */
 }
