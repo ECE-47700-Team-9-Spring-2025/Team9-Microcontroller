@@ -34,11 +34,7 @@ static char* tx_1 = "AT";
 static char* setup_cmds[] = {
     "AT+ROLE0",      // Set as peripheral
     "AT+ADVI3",      // Set advertising interval to 318.75ms (better compatibility)
-    "AT+ADTY0",      // Allow advertising and connections
-    "AT+FLAG1",      // Enable advertising flag (critical for iOS visibility)
     "AT+NAMEFairway",
-    "AT+SHOW1",
-    "AT+IBEA0",
     "AT+UUID0xFFE0", // Set standard service UUID
     "AT+CHAR0xFFE1", // Set standard characteristic UUID
     "AT+POWE3",      // Max transmit power (6dbm)
@@ -128,7 +124,6 @@ SPI_HandleTypeDef hspi2;
 UART_HandleTypeDef huart1;
 UART_HandleTypeDef huart2;
 UART_HandleTypeDef huart6;
-DMA_HandleTypeDef hdma_usart1_tx;
 DMA_HandleTypeDef hdma_usart1_rx;
 DMA_HandleTypeDef hdma_usart6_rx;
 
@@ -618,6 +613,7 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
     if (huart->Instance == USART1) {
+        printToConsole("\r\nReceived (callback): %s", bt_gps_buffer);
         // Check if we have received GPS data from the app (26 bytes)
         if (huart->RxXferSize == BT_GPS_DATA_SIZE) {
             // Process the received GPS data
@@ -1088,9 +1084,23 @@ int main(void)
     if (bt_gps_data_ready) {
         bt_gps_data_ready = false;
         
-        // Your code to use the GPS data can go here
-        // For example, calculating vectors between points
-        // or making navigation decisions
+    }
+
+    static uint32_t last_debug = 0;
+    
+    if (HAL_GetTick() - last_debug > 3000) {  // Every 3 seconds
+        last_debug = HAL_GetTick();
+        
+        printToConsole("\r\nBT buffer contents: ");
+        for (int i = 0; i < 10; i++) {
+            printToConsole("%02X ", bt_gps_buffer[i]);
+        }
+        printToConsole("\r\n");
+        
+        uint8_t test_byte;
+        if (HAL_UART_Receive(&huart1, &test_byte, 1, 1) == HAL_OK) {
+            printToConsole("Direct RX data: 0x%02X\r\n", test_byte);
+        }
     }
     
     // Rest of your existing code
@@ -1300,9 +1310,6 @@ static void MX_DMA_Init(void)
   /* DMA2_Stream2_IRQn interrupt configuration */
   HAL_NVIC_SetPriority(DMA2_Stream2_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(DMA2_Stream2_IRQn);
-  /* DMA2_Stream7_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(DMA2_Stream7_IRQn, 0, 0);
-  HAL_NVIC_EnableIRQ(DMA2_Stream7_IRQn);
 
 }
 
