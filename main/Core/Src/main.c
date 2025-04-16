@@ -87,6 +87,17 @@ int16_t mag_data[3];
 #define MAGNETIC_DECLINATION_DEG -4.48f  // Purdue University's Magnetic Declination
 #define DEBUG_GPS_DATA 0
 
+// Motor pins (update these based on your hardware connections)
+#define MOTOR_LEFT_FWD_TIM       htim2
+#define MOTOR_LEFT_FWD_CHANNEL   TIM_CHANNEL_1
+#define MOTOR_LEFT_REV_TIM       htim2
+#define MOTOR_LEFT_REV_CHANNEL   TIM_CHANNEL_2
+
+#define MOTOR_RIGHT_FWD_TIM      htim3
+#define MOTOR_RIGHT_FWD_CHANNEL  TIM_CHANNEL_1
+#define MOTOR_RIGHT_REV_TIM      htim3
+#define MOTOR_RIGHT_REV_CHANNEL  TIM_CHANNEL_2
+
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -544,10 +555,47 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 }
 
 // Set PWM duty cycle
-// void PWM_SetDutyCycle(TIM_HandleTypeDef *htim, uint32_t Channel, uint16_t dutyCycle) {
-//     uint16_t pulse = (__HAL_TIM_GET_AUTORELOAD(htim) * dutyCycle) / 100;
-//     __HAL_TIM_SET_COMPARE(htim, Channel, pulse);
-// }
+void PWM_SetDutyCycle(TIM_HandleTypeDef *htim, uint32_t Channel, uint16_t dutyCycle) {
+    uint16_t pulse = (__HAL_TIM_GET_AUTORELOAD(htim) * dutyCycle) / 100;
+    __HAL_TIM_SET_COMPARE(htim, Channel, pulse);
+}
+
+/**
+ * Control both motors with a single function
+ * @param leftSpeed: Speed for left motor (-100 to +100)
+ *                  Positive values = forward, Negative values = reverse
+ * @param rightSpeed: Speed for right motor (-100 to +100)
+ *                   Positive values = forward, Negative values = reverse
+ */
+void controlMotors(int leftSpeed, int rightSpeed) {
+    // Constrain speeds to valid range
+    leftSpeed = (leftSpeed > 100) ? 100 : leftSpeed;
+    leftSpeed = (leftSpeed < -100) ? -100 : leftSpeed;
+    rightSpeed = (rightSpeed > 100) ? 100 : rightSpeed;
+    rightSpeed = (rightSpeed < -100) ? -100 : rightSpeed;
+    
+    // Set left motor
+    if (leftSpeed >= 0) {
+        // Forward
+        PWM_SetDutyCycle(&MOTOR_LEFT_FWD_TIM, MOTOR_LEFT_FWD_CHANNEL, leftSpeed);
+        PWM_SetDutyCycle(&MOTOR_LEFT_REV_TIM, MOTOR_LEFT_REV_CHANNEL, 0);
+    } else {
+        // Reverse
+        PWM_SetDutyCycle(&MOTOR_LEFT_FWD_TIM, MOTOR_LEFT_FWD_CHANNEL, 0);
+        PWM_SetDutyCycle(&MOTOR_LEFT_REV_TIM, MOTOR_LEFT_REV_CHANNEL, -leftSpeed);
+    }
+    
+    // Set right motor
+    if (rightSpeed >= 0) {
+        // Forward
+        PWM_SetDutyCycle(&MOTOR_RIGHT_FWD_TIM, MOTOR_RIGHT_FWD_CHANNEL, rightSpeed);
+        PWM_SetDutyCycle(&MOTOR_RIGHT_REV_TIM, MOTOR_RIGHT_REV_CHANNEL, 0);
+    } else {
+        // Reverse
+        PWM_SetDutyCycle(&MOTOR_RIGHT_FWD_TIM, MOTOR_RIGHT_FWD_CHANNEL, 0);
+        PWM_SetDutyCycle(&MOTOR_RIGHT_REV_TIM, MOTOR_RIGHT_REV_CHANNEL, -rightSpeed);
+    }
+}
 
 // imu libraries
 typedef struct {
@@ -959,12 +1007,56 @@ int main(void)
 
   // Test USART6 reception
   // testUSART6Reception();
+
+  // Start PWM channels
+  HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
+  HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_2);
+  HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1);
+  HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_2);
+  
+  // Initialize motors to stopped state
+  controlMotors(0, 0);
+  
+  // Optional: Print motor control initialization message
+  printToConsole("Motor control initialized\r\n");
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+    printToConsole("Starting Motor Control Test\r\n");
+    // Turn on LED to indicate motor activity
+    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_SET);
+    
+    // Both motors forward
+    controlMotors(70, 70);
+    HAL_Delay(2000);
+    
+    // Stop
+    controlMotors(0, 0);
+    HAL_Delay(2000);
+    
+    // Turn right (left motor forward, right motor stopped)
+    controlMotors(70, 0);
+    HAL_Delay(2000);
+    
+    // Stop
+    controlMotors(0, 0);
+    HAL_Delay(2000);
+
+    // Turn left (right motor forward, left motor stopped)
+    controlMotors(0, 70);
+    HAL_Delay(2000);
+
+    // Stop
+    controlMotors(0, 0);
+    HAL_Delay(2000);
+
+    printToConsole("Motor Control Test Complete\r\n");
+
+    continue;
+
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
