@@ -85,7 +85,7 @@ int16_t mag_data[3];
 // This is the angle between magnetic north and true north
 // Look up the value for your area: https://www.ngdc.noaa.gov/geomag/calculators/magcalc.shtml
 #define MAGNETIC_DECLINATION_DEG -4.48f  // Purdue University's Magnetic Declination
-#define DEBUG_GPS_DATA 1
+#define DEBUG_GPS_DATA 0
 
 /* USER CODE END Includes */
 
@@ -122,6 +122,10 @@ DMA_HandleTypeDef hdma_usart6_rx;
 /* USER CODE BEGIN PV */
 GPS_Data gps_data;
 GPS_Data phone_gps_data;
+GPS_Data previous_gps_data;       // Add this to store previous GPS data
+GPS_Data previous_phone_gps_data; // Add this to store previous phone GPS data
+GNSSVector gnss_vector;           // Store the calculated vector
+bool gnss_vector_valid = false;   // Flag to indicate if the vector is valid
 // DMA buffer for UART reception
 #define UART_RX_BUFFER_SIZE 512
 uint8_t uartRxBuffer[UART_RX_BUFFER_SIZE];
@@ -861,6 +865,7 @@ float read_imu_data(void) {
 // New function to process GPS data
 void ProcessGpsData() {
     char nmeaBuffer[256];
+    
     if (getNMEASentence(nmeaBuffer, sizeof(nmeaBuffer))) {
         // Debug raw NMEA sentence
         if (DEBUG_GPS_DATA) {
@@ -871,8 +876,12 @@ void ProcessGpsData() {
         
         if (strstr(nmeaBuffer, "$GNRMC")) {
             printToConsole("\r\n=== GNRMC Message Detected ===\r\n");  
+            
+            // Store previous GPS data before updating
+            memcpy(&previous_gps_data, &gps_data, sizeof(GPS_Data));
+            
             bool success = M8Q_ParseGNRMC(nmeaBuffer, &gps_data);
-            if (success && DEBUG_GPS_DATA) {
+            if (success) {
                 printToConsole("\r\nParsing Successful!\r\n");
                 printToConsole("Time: %02d:%02d:%02d UTC\r\n", 
                     gps_data.hours, gps_data.minutes, gps_data.seconds);
@@ -885,32 +894,6 @@ void ProcessGpsData() {
                     printToConsole("Speed: %.2f knots\r\n", gps_data.speed_knots);
                     printToConsole("Course: %.2f degrees\r\n", gps_data.course);
                 }
-                
-                // Process phone GPS data (currently using dummy data)
-                printToConsole("No Phone GPS Data Received! Using dummy phone GPS data\r\n");
-                phone_gps_data.latitude = 37;
-                phone_gps_data.lat_direction = 'N';
-                phone_gps_data.longitude = -122;
-                phone_gps_data.lon_direction = 'W';
-                phone_gps_data.speed_knots = 10.0;
-                phone_gps_data.course = 270.0;
-                phone_gps_data.fix_valid = true;
-                
-                // Calculate vector between GPS positions
-                GNSSVector gnss_vector = calculateGNSSVector(gps_data, phone_gps_data);
-                printToConsole("Distance between points: %.2f meters\r\n", gnss_vector.distance);
-                printToConsole("Bearing between points: %.1f degrees\r\n", gnss_vector.bearing);
-                
-                // Get current bearing from IMU
-                float bearing = read_imu_data();
-                printToConsole("Bearing: %.1f degrees\r\n", bearing);
-                
-                // Calculate the difference between the two bearings
-                float difference = bearing - gnss_vector.bearing;
-                printToConsole("Difference between bearings: %.1f degrees\r\n", difference);
-                
-                printToConsole("Robot Should Turn %s by %.1f degrees\r\n\n\n", 
-                    difference > 0 ? "left" : "right", fabs(difference));
             }
         }
     } else {
@@ -978,6 +961,76 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+    // Process phone GPS data (currently using dummy data)
+    // Store previous phone GPS data before updating
+    memcpy(&previous_phone_gps_data, &phone_gps_data, sizeof(GPS_Data));
+    
+    // In a real implementation, you would receive phone GPS data here
+    // For now, using dummy data
+    static uint32_t lastPhoneDataUpdate = 0;
+    uint32_t currentTime = HAL_GetTick();
+    
+    // Update dummy phone data periodically (every 5 seconds)
+    if (currentTime - lastPhoneDataUpdate > 5000) {
+        printToConsole("No Phone GPS Data Received! Using dummy phone GPS data\r\n");
+        phone_gps_data.latitude = 37;
+        phone_gps_data.lat_direction = 'N';
+        phone_gps_data.longitude = -122;
+        phone_gps_data.lon_direction = 'W';
+        phone_gps_data.speed_knots = 10.0;
+        phone_gps_data.course = 270.0;
+        phone_gps_data.fix_valid = true;
+        
+        lastPhoneDataUpdate = currentTime;
+    }
+    
+    // Check if GPS data has changed
+    bool gps_data_changed = false;
+    bool phone_gps_data_changed = false;
+    
+    if (gps_data.fix_valid && 
+        (gps_data.latitude != previous_gps_data.latitude ||
+         gps_data.longitude != previous_gps_data.longitude ||
+         gps_data.lat_direction != previous_gps_data.lat_direction ||
+         gps_data.lon_direction != previous_gps_data.lon_direction)) {
+        gps_data_changed = true;
+    }
+    
+    if (phone_gps_data.fix_valid && 
+        (phone_gps_data.latitude != previous_phone_gps_data.latitude ||
+         phone_gps_data.longitude != previous_phone_gps_data.longitude ||
+         phone_gps_data.lat_direction != previous_phone_gps_data.lat_direction ||
+         phone_gps_data.lon_direction != previous_phone_gps_data.lon_direction)) {
+        phone_gps_data_changed = true;
+    }
+    
+    // Calculate vector between GPS positions only if data has changed
+    if ((gps_data_changed || phone_gps_data_changed) && 
+        gps_data.fix_valid && phone_gps_data.fix_valid) {
+        gnss_vector = calculateGNSSVector(gps_data, phone_gps_data);
+        gnss_vector_valid = true;
+        printToConsole("Recalculated GNSS vector\r\n");
+        
+        // Display vector information
+        printToConsole("Distance between points: %.2f meters\r\n", gnss_vector.distance);
+        printToConsole("Bearing between points: %.1f degrees\r\n", gnss_vector.bearing);
+        
+        // Get current bearing from IMU
+        float bearing = read_imu_data();
+        printToConsole("Current Bearing: %.1f degrees\r\n", bearing);
+        
+        // Calculate the difference between the two bearings
+        float difference = bearing - gnss_vector.bearing;
+        // Normalize the difference to -180 to 180 degrees
+        if (difference > 180) difference -= 360;
+        if (difference < -180) difference += 360;
+        
+        printToConsole("Difference between bearings: %.1f degrees\r\n", difference);
+        
+        printToConsole("Robot Should Turn %s by %.1f degrees\r\n\n\n", 
+            difference > 0 ? "left" : "right", fabs(difference));
+    }
+    
     // Optional: Add a small delay to prevent CPU hogging
     HAL_Delay(10);
   }
