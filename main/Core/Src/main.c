@@ -85,7 +85,7 @@ int16_t mag_data[3];
 // This is the angle between magnetic north and true north
 // Look up the value for your area: https://www.ngdc.noaa.gov/geomag/calculators/magcalc.shtml
 #define MAGNETIC_DECLINATION_DEG -4.48f  // Purdue University's Magnetic Declination
-#define DEBUG_GPS_DATA 0
+#define DEBUG_GPS_DATA 1
 
 // Motor pins (update these based on your hardware connections)
 #define MOTOR_LEFT_FWD_TIM       htim2
@@ -300,158 +300,6 @@ GPS_Status parseGPSTXT(const char* message) {
     return GPS_STATUS_NO_FIX;
 }
 
-bool printCurrentGpsOutput(void) {
-    char buffer[256];
-    static GPS_Status lastStatus = GPS_STATUS_INIT;
-    static uint32_t noFixCount = 0;
-    static uint32_t lastDebugPrint = 0;
-    const uint32_t DEBUG_PRINT_INTERVAL = 1000; // Print debug every 1 second
-    
-    memset(buffer, 0, sizeof(buffer));
-    memset(&gps_data, 0, sizeof(GPS_Data));
-
-    if (readUntilNewline(buffer, sizeof(buffer))) {
-        // Debug message with timestamp
-        uint32_t currentTick = HAL_GetTick();
-        if (currentTick - lastDebugPrint >= DEBUG_PRINT_INTERVAL) {
-            printToConsole("\r\n=== GPS Debug [%lu ms] ===\r\n", currentTick);
-            lastDebugPrint = currentTick;
-        }
-
-        // Validate NMEA message format
-        if (buffer[0] != '$') {
-            printToConsole("ERROR: Invalid NMEA format\r\n");
-            return false;
-        }
-        
-        // Test buffer
-        // const char* buffer = "$GNRMC,201850.00,A,4025.69979,N,08654.69118,W,0.256,,240225,08654.69118,W,0.256,,240225,,,A*73";
-        
-        // Parse message type
-        if (strstr(buffer, "$GNRMC")) {
-            printToConsole("Message Type: RMC (Position/Speed/Time)\r\n");
-            
-            if (M8Q_ParseGNRMC(buffer, &gps_data)) {
-                if (!gps_data.fix_valid) {
-                    noFixCount++;
-                    printToConsole("Status: NO FIX (Waiting: %lu sec)\r\n", noFixCount);
-                    printToConsole("Time: %02d:%02d:%02d UTC\r\n", 
-                        gps_data.hours, 
-                        gps_data.minutes, 
-                        gps_data.seconds);
-                    printToConsole("Troubleshooting:\r\n");
-                    printToConsole("- Ensure clear view of sky\r\n");
-                    printToConsole("- Wait for satellite acquisition (can take 1-5 min)\r\n");
-                    printToConsole("- Check antenna connection\r\n");
-                } else {
-                    noFixCount = 0;
-                    printToConsole("\r\n=== GPS Location Update ===\r\n");
-                    printToConsole("Time: %02d:%02d:%02d UTC\r\n", 
-                        gps_data.hours, 
-                        gps_data.minutes, 
-                        gps_data.seconds);
-                    
-                    printToConsole("Date: %02d/%02d/%04d\r\n", 
-                        gps_data.day, 
-                        gps_data.month, 
-                        gps_data.year);
-                    
-                    // Convert coordinates to degrees and decimal minutes format
-                    int lat_deg = (int)gps_data.latitude;
-                    double lat_min = (gps_data.latitude - lat_deg) * 60;
-                    int lon_deg = (int)gps_data.longitude;
-                    double lon_min = (gps_data.longitude - lon_deg) * 60;
-                    
-                    printToConsole("Position:\r\n");
-                    printToConsole("  %d°%.4f' %c\r\n", 
-                        abs(lat_deg), fabs(lat_min), gps_data.lat_direction);
-                    printToConsole("  %d°%.4f' %c\r\n", 
-                        abs(lon_deg), fabs(lon_min), gps_data.lon_direction);
-                    
-                    if (gps_data.speed_knots > 0.5) { // Only show speed if moving
-                        printToConsole("Speed: %.1f km/h\r\n", 
-                            gps_data.speed_knots * 1.852); // Convert knots to km/h
-                        printToConsole("Heading: %.1f°\r\n", 
-                            gps_data.course);
-                    }
-                    
-                    printToConsole("=========================\r\n");
-                }
-            } else {
-                printToConsole("ERROR: Failed to parse RMC message\r\n");
-                printToConsole("Raw: %s\r\n", buffer);
-            }
-            return true;
-        } 
-        else if (strstr(buffer, "$GNGGA")) {
-            printToConsole("Message Type: GGA (GPS Fix Data)\r\n");
-            
-            // Parse GGA message fields
-            char *saveptr;
-            char *token = strtok_r(buffer, ",", &saveptr);
-            int field = 0;
-            
-            while (token != NULL) {
-                switch(field) {
-                    case 6: // Fix quality
-                        printToConsole("Fix Quality: ");
-                        switch(atoi(token)) {
-                            case 0: printToConsole("Invalid\r\n"); break;
-                            case 1: printToConsole("GPS Fix\r\n"); break;
-                            case 2: printToConsole("DGPS Fix\r\n"); break;
-                            default: printToConsole("Unknown (%s)\r\n", token); break;
-                        }
-                        break;
-                    case 7: // Satellites in use
-                        printToConsole("Satellites: %s in use\r\n", token);
-                        break;
-                    case 8: // HDOP
-                        {
-                            float hdop = atof(token);
-                            printToConsole("HDOP: %.1f ", hdop);
-                            if (hdop < 1.0) printToConsole("(Excellent)\r\n");
-                            else if (hdop < 2.0) printToConsole("(Good)\r\n");
-                            else if (hdop < 5.0) printToConsole("(Moderate)\r\n");
-                            else printToConsole("(Poor)\r\n");
-                        }
-                        break;
-                }
-                field++;
-                token = strtok_r(NULL, ",", &saveptr);
-            }
-            return true;
-        }
-        else if (strstr(buffer, "$GNTXT")) {
-            GPS_Status status = parseGPSTXT(buffer);
-            if (status != lastStatus) {
-                switch(status) {
-                    case GPS_STATUS_INIT:
-                        printToConsole("GPS Status: Initializing antenna\r\n");
-                        break;
-                    case GPS_STATUS_OK:
-                        printToConsole("GPS Status: Antenna OK, waiting for fix\r\n");
-                        break;
-                    case GPS_STATUS_ERROR:
-                        printToConsole("GPS Status: Antenna error detected!\r\n");
-                        break;
-                    default:
-                        break;
-                }
-                lastStatus = status;
-            }
-            printToConsole("GPS Info Message: %s", buffer);
-            return true;
-        }
-        else {
-            printToConsole("Message Type: Other (%.*s)\r\n", 5, buffer);
-            return true;
-        }
-    } else {
-        printToConsole("ERROR: Failed to read NMEA sentence\r\n");
-        return false;
-    }
-}
-
 bool getNMEASentence(char *buffer, size_t maxSize) {
     uint16_t startPos = UINT16_MAX;
     uint16_t endPos = UINT16_MAX;
@@ -514,6 +362,69 @@ bool getNMEASentence(char *buffer, size_t maxSize) {
     }
     
     return false;
+}
+
+// New function to process GPS data
+void ProcessGpsData() {
+    char nmeaBuffer[256];
+    
+    if (getNMEASentence(nmeaBuffer, sizeof(nmeaBuffer))) {
+        // Debug raw NMEA sentence
+        if (DEBUG_GPS_DATA) {
+            printToConsole("\r\n--- Raw NMEA Sentence ---\r\n");
+            printToConsole("Length: %d bytes\r\n", strlen(nmeaBuffer));
+            printToConsole("Content: %s", nmeaBuffer);
+        }
+        
+        if (strstr(nmeaBuffer, "$GNRMC")) {
+            printToConsole("=== GNRMC Message Detected ===\r\n");  
+            
+            // Store previous GPS data before updating
+            memcpy(&previous_gps_data, &gps_data, sizeof(GPS_Data));
+            
+            bool success = M8Q_ParseGNRMC(nmeaBuffer, &gps_data);
+            if (success) {
+                printToConsole("\r\nParsing Successful!\r\n");
+                printToConsole("Time: %02d:%02d:%02d UTC\r\n", 
+                    gps_data.hours, gps_data.minutes, gps_data.seconds);
+                printToConsole("Fix Valid: %s\r\n", 
+                    gps_data.fix_valid ? "Yes" : "No");
+                printToConsole("Position: %.6f%c, %.6f%c\r\n",
+                    gps_data.latitude, gps_data.lat_direction,
+                    gps_data.longitude, gps_data.lon_direction);
+                if (gps_data.speed_knots > 0) {
+                    printToConsole("Speed: %.2f knots\r\n", gps_data.speed_knots);
+                    printToConsole("Course: %.2f degrees\r\n", gps_data.course);
+                }
+            }
+        } 
+
+        if (strstr(nmeaBuffer, "$GNGLL")) {
+            printToConsole("=== GNGLL Message Detected ===\r\n");
+
+            // Store previous GPS data before updating
+            memcpy(&previous_gps_data, &gps_data, sizeof(GPS_Data));
+            
+            bool success = M8Q_ParseGNGLL(nmeaBuffer, &gps_data);
+            if (success) {
+                printToConsole("\r\nParsing Successful!\r\n");
+                printToConsole("Time: %02d:%02d:%02d UTC\r\n", 
+                    gps_data.hours, gps_data.minutes, gps_data.seconds);
+                printToConsole("Fix Valid: %s\r\n", 
+                    gps_data.fix_valid ? "Yes" : "No");
+                printToConsole("Position: %.6f%c, %.6f%c\r\n",
+                    gps_data.latitude, gps_data.lat_direction,
+                    gps_data.longitude, gps_data.lon_direction);
+                if (gps_data.speed_knots > 0) {
+                    printToConsole("Speed: %.2f knots\r\n", gps_data.speed_knots);
+                    printToConsole("Course: %.2f degrees\r\n", gps_data.course);
+                }
+            }
+        }
+    }
+    //  else {
+    //     printToConsole("No Microcontroller GPS data present! Please check the connection.\r\n");
+    // }
 }
 
 void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
@@ -915,45 +826,6 @@ float read_imu_data(void) {
     return bearing;
 }
 
-// New function to process GPS data
-void ProcessGpsData() {
-    char nmeaBuffer[256];
-    
-    if (getNMEASentence(nmeaBuffer, sizeof(nmeaBuffer))) {
-        // Debug raw NMEA sentence
-        if (DEBUG_GPS_DATA) {
-            printToConsole("\r\n--- Raw NMEA Sentence ---\r\n");
-            printToConsole("Length: %d bytes\r\n", strlen(nmeaBuffer));
-            printToConsole("Content: %s", nmeaBuffer);
-        }
-        
-        if (strstr(nmeaBuffer, "$GNRMC")) {
-            printToConsole("\r\n=== GNRMC Message Detected ===\r\n");  
-            
-            // Store previous GPS data before updating
-            memcpy(&previous_gps_data, &gps_data, sizeof(GPS_Data));
-            
-            bool success = M8Q_ParseGNRMC(nmeaBuffer, &gps_data);
-            if (success) {
-                printToConsole("\r\nParsing Successful!\r\n");
-                printToConsole("Time: %02d:%02d:%02d UTC\r\n", 
-                    gps_data.hours, gps_data.minutes, gps_data.seconds);
-                printToConsole("Fix Valid: %s\r\n", 
-                    gps_data.fix_valid ? "Yes" : "No");
-                printToConsole("Position: %.6f%c, %.6f%c\r\n",
-                    gps_data.latitude, gps_data.lat_direction,
-                    gps_data.longitude, gps_data.lon_direction);
-                if (gps_data.speed_knots > 0) {
-                    printToConsole("Speed: %.2f knots\r\n", gps_data.speed_knots);
-                    printToConsole("Course: %.2f degrees\r\n", gps_data.course);
-                }
-            }
-        }
-    } else {
-        printToConsole("No Microcontroller GPS data present! Please check the connection.\r\n");
-    }
-}
-
 /* USER CODE END 0 */
 
 /**
@@ -998,12 +870,12 @@ int main(void)
   init_imu();
   HAL_UART_Receive_DMA(&huart1, rx_buf, size);
   HAL_UART_Transmit_DMA(&huart1, (uint8_t*)tx_1, size);
-  printToConsole("Sent: %s", tx_1);
+//   printToConsole("Sent: %s", tx_1);
 
   // Initialize DMA for UART6 reception
   HAL_UARTEx_ReceiveToIdle_DMA(&huart6, uartRxBuffer, UART_RX_BUFFER_SIZE);
   __HAL_DMA_DISABLE_IT(huart6.hdmarx, DMA_IT_HT); // Disable Half Transfer interrupt
-  printToConsole("DMA Initialized!\r\n");
+  printToConsole("DMA Initialized successfully\r\n");
 
   // Test USART6 reception
   // testUSART6Reception();
@@ -1018,45 +890,13 @@ int main(void)
   controlMotors(0, 0);
   
   // Optional: Print motor control initialization message
-  printToConsole("Motor control initialized\r\n");
+  printToConsole("Motor control initialized successfully\r\n");
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-    printToConsole("Starting Motor Control Test\r\n");
-    // Turn on LED to indicate motor activity
-    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_SET);
-    
-    // Both motors forward
-    controlMotors(70, 70);
-    HAL_Delay(2000);
-    
-    // Stop
-    controlMotors(0, 0);
-    HAL_Delay(2000);
-    
-    // Turn right (left motor forward, right motor stopped)
-    controlMotors(70, 0);
-    HAL_Delay(2000);
-    
-    // Stop
-    controlMotors(0, 0);
-    HAL_Delay(2000);
-
-    // Turn left (right motor forward, left motor stopped)
-    controlMotors(0, 70);
-    HAL_Delay(2000);
-
-    // Stop
-    controlMotors(0, 0);
-    HAL_Delay(2000);
-
-    printToConsole("Motor Control Test Complete\r\n");
-
-    continue;
-
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -1128,6 +968,67 @@ int main(void)
         
         printToConsole("Robot Should Turn %s by %.1f degrees\r\n\n\n", 
             difference > 0 ? "left" : "right", fabs(difference));
+
+        // Improved motor control algorithm based on both bearing difference and distance
+        // Define maximum speeds and thresholds
+        const int MAX_SPEED = 100;
+        const int MIN_SPEED = 20;
+        const float MAX_DISTANCE = 50.0f;  // meters
+        const float MIN_DISTANCE = 2.0f;   // meters
+        const float MAX_ANGLE_DIFF = 180.0f;
+        const float MIN_ANGLE_DIFF = 5.0f;
+        
+        // Calculate speed based on distance (linear mapping)
+        float distanceSpeed = 0;
+        if (gnss_vector.distance > MAX_DISTANCE) {
+            distanceSpeed = MAX_SPEED;
+        } else if (gnss_vector.distance < MIN_DISTANCE) {
+            distanceSpeed = MIN_SPEED;
+        } else {
+            // Linear interpolation between MIN_SPEED and MAX_SPEED
+            distanceSpeed = MIN_SPEED + (MAX_SPEED - MIN_SPEED) * 
+                           ((gnss_vector.distance - MIN_DISTANCE) / (MAX_DISTANCE - MIN_DISTANCE));
+        }
+        
+        // Calculate turn intensity based on bearing difference
+        float turnIntensity = 0;
+        float absDifference = fabs(difference);
+        if (absDifference < MIN_ANGLE_DIFF) {
+            // Almost aligned, minimal turning
+            turnIntensity = 0.1f;
+        } else if (absDifference > MAX_ANGLE_DIFF) {
+            // Maximum turning
+            turnIntensity = 1.0f;
+        } else {
+            // Linear interpolation for turn intensity
+            turnIntensity = 0.1f + 0.9f * ((absDifference - MIN_ANGLE_DIFF) / 
+                                          (MAX_ANGLE_DIFF - MIN_ANGLE_DIFF));
+        }
+        
+        // Calculate left and right motor speeds
+        int leftSpeed = 0;
+        int rightSpeed = 0;
+        
+        if (absDifference < MIN_ANGLE_DIFF) {
+            // Almost aligned, go straight
+            leftSpeed = rightSpeed = (int)distanceSpeed;
+        } else {
+            // Need to turn
+            if (difference > 0) {
+                // Turn left
+                rightSpeed = (int)distanceSpeed;
+                leftSpeed = (int)(distanceSpeed * (1.0f - turnIntensity));
+            } else {
+                // Turn right
+                leftSpeed = (int)distanceSpeed;
+                rightSpeed = (int)(distanceSpeed * (1.0f - turnIntensity));
+            }
+        }
+        
+        // Apply motor speeds
+        printToConsole("Motor speeds: Left=%d, Right=%d (Distance: %.2fm, Turn: %.2f)\r\n", 
+                      leftSpeed, rightSpeed, gnss_vector.distance, turnIntensity);
+        controlMotors(leftSpeed, rightSpeed);
     }
     
     // Optional: Add a small delay to prevent CPU hogging
