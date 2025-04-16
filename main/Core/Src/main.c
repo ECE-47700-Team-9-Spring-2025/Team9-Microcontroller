@@ -133,6 +133,10 @@ volatile uint16_t searchPos = 0;
 static int16_t accel_history[ROLLING_AVG_SAMPLES][3] = {0};
 static int16_t mag_history[ROLLING_AVG_SAMPLES][3] = {0};
 static uint8_t history_index = 0;
+
+// Add this global variable to track when to process GPS data
+static uint32_t lastGpsProcessTime = 0;
+#define GPS_PROCESS_INTERVAL 1000 // Process GPS data every 1 second
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -494,9 +498,6 @@ bool getNMEASentence(char *buffer, size_t maxSize) {
 
 void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
     if (huart->Instance == USART6) {
-        // Debug output to confirm callback is working
-        // printToConsole("DMA received %d bytes\r\n", Size);
-        
         // Calculate the new head position
         uint16_t newHead = (rxHead + Size) % UART_RX_BUFFER_SIZE;
         rxHead = newHead;
@@ -505,7 +506,15 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
         if ((rxHead > searchPos && (rxHead - searchPos) > UART_RX_BUFFER_SIZE/2) ||
             (rxHead < searchPos && (UART_RX_BUFFER_SIZE - searchPos + rxHead) > UART_RX_BUFFER_SIZE/2)) {
             searchPos = (rxHead + UART_RX_BUFFER_SIZE - 100) % UART_RX_BUFFER_SIZE;
-            // printToConsole("Adjusted searchPos to %d\r\n", searchPos);
+        }
+        
+        // Process GPS data at regular intervals
+        uint32_t currentTime = HAL_GetTick();
+        if (currentTime - lastGpsProcessTime >= GPS_PROCESS_INTERVAL) {
+            lastGpsProcessTime = currentTime;
+            
+            // Process GPS data
+            ProcessGpsData();
         }
         
         // Restart DMA reception
@@ -849,6 +858,66 @@ float read_imu_data(void) {
     return bearing;
 }
 
+// New function to process GPS data
+void ProcessGpsData() {
+    char nmeaBuffer[256];
+    if (getNMEASentence(nmeaBuffer, sizeof(nmeaBuffer))) {
+        // Debug raw NMEA sentence
+        if (DEBUG_GPS_DATA) {
+            printToConsole("\r\n--- Raw NMEA Sentence ---\r\n");
+            printToConsole("Length: %d bytes\r\n", strlen(nmeaBuffer));
+            printToConsole("Content: %s", nmeaBuffer);
+        }
+        
+        if (strstr(nmeaBuffer, "$GNRMC")) {
+            printToConsole("\r\n=== GNRMC Message Detected ===\r\n");  
+            bool success = M8Q_ParseGNRMC(nmeaBuffer, &gps_data);
+            if (success && DEBUG_GPS_DATA) {
+                printToConsole("\r\nParsing Successful!\r\n");
+                printToConsole("Time: %02d:%02d:%02d UTC\r\n", 
+                    gps_data.hours, gps_data.minutes, gps_data.seconds);
+                printToConsole("Fix Valid: %s\r\n", 
+                    gps_data.fix_valid ? "Yes" : "No");
+                printToConsole("Position: %.6f%c, %.6f%c\r\n",
+                    gps_data.latitude, gps_data.lat_direction,
+                    gps_data.longitude, gps_data.lon_direction);
+                if (gps_data.speed_knots > 0) {
+                    printToConsole("Speed: %.2f knots\r\n", gps_data.speed_knots);
+                    printToConsole("Course: %.2f degrees\r\n", gps_data.course);
+                }
+                
+                // Process phone GPS data (currently using dummy data)
+                printToConsole("No Phone GPS Data Received! Using dummy phone GPS data\r\n");
+                phone_gps_data.latitude = 37;
+                phone_gps_data.lat_direction = 'N';
+                phone_gps_data.longitude = -122;
+                phone_gps_data.lon_direction = 'W';
+                phone_gps_data.speed_knots = 10.0;
+                phone_gps_data.course = 270.0;
+                phone_gps_data.fix_valid = true;
+                
+                // Calculate vector between GPS positions
+                GNSSVector gnss_vector = calculateGNSSVector(gps_data, phone_gps_data);
+                printToConsole("Distance between points: %.2f meters\r\n", gnss_vector.distance);
+                printToConsole("Bearing between points: %.1f degrees\r\n", gnss_vector.bearing);
+                
+                // Get current bearing from IMU
+                float bearing = read_imu_data();
+                printToConsole("Bearing: %.1f degrees\r\n", bearing);
+                
+                // Calculate the difference between the two bearings
+                float difference = bearing - gnss_vector.bearing;
+                printToConsole("Difference between bearings: %.1f degrees\r\n", difference);
+                
+                printToConsole("Robot Should Turn %s by %.1f degrees\r\n\n\n", 
+                    difference > 0 ? "left" : "right", fabs(difference));
+            }
+        }
+    } else {
+        printToConsole("No Microcontroller GPS data present! Please check the connection.\r\n");
+    }
+}
+
 /* USER CODE END 0 */
 
 /**
@@ -909,66 +978,8 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-    // GPS test code
-    char nmeaBuffer[256];
-    if (getNMEASentence(nmeaBuffer, sizeof(nmeaBuffer))) {
-      // Debug raw NMEA sentence
-      if (DEBUG_GPS_DATA) {
-        printToConsole("\r\n--- Raw NMEA Sentence ---\r\n");
-        printToConsole("Length: %d bytes\r\n", strlen(nmeaBuffer));
-        printToConsole("Content: %s", nmeaBuffer);
-      }
-      
-      if (strstr(nmeaBuffer, "$GNRMC") ) {
-        printToConsole("\r\n=== GNRMC Message Detected ===\r\n");  
-        bool success = M8Q_ParseGNRMC(nmeaBuffer, &gps_data);
-        if (success && DEBUG_GPS_DATA) {
-          printToConsole("\r\nParsing Successful!\r\n");
-          printToConsole("Time: %02d:%02d:%02d UTC\r\n", 
-              gps_data.hours, gps_data.minutes, gps_data.seconds);
-          printToConsole("Fix Valid: %s\r\n", 
-              gps_data.fix_valid ? "Yes" : "No");
-          printToConsole("Position: %.6f%c, %.6f%c\r\n",
-              gps_data.latitude, gps_data.lat_direction,
-              gps_data.longitude, gps_data.lon_direction);
-          if (gps_data.speed_knots > 0) {
-            printToConsole("Speed: %.2f knots\r\n", gps_data.speed_knots);
-            printToConsole("Course: %.2f degrees\r\n", gps_data.course);
-          }
-        }
-      }
-    } else {
-      printToConsole("No Microcontroller GPS data present! Please check the connection.\r\n");
-    }
-
-    if (true) {
-      printToConsole("No Phone GPS Data Received! Using dummy phone GPS data\r\n");
-      phone_gps_data.latitude = 37;
-      phone_gps_data.lat_direction = 'N';
-      phone_gps_data.longitude = -122;
-      phone_gps_data.lon_direction = 'W';
-      phone_gps_data.speed_knots = 10.0;
-      phone_gps_data.course = 270.0;
-      phone_gps_data.fix_valid = true;
-    }
-
-    GNSSVector gnss_vector = calculateGNSSVector(gps_data, phone_gps_data);
-    printToConsole("Distance between points: %.2f meters\r\n", gnss_vector.distance);
-    printToConsole("Bearing between points: %.1f degrees\r\n", gnss_vector.bearing);
-    // Distance between points: 1418.02 meters
-    // Bearing between points: 218.4 degrees
-
-    float bearing = read_imu_data();
-    printToConsole("Bearing: %.1f degrees\r\n", bearing);
-    // Bearing: 222.4 degrees
-
-    // Calculate the difference between the two bearings
-    float difference = bearing - gnss_vector.bearing;
-    printToConsole("Difference between bearings: %.1f degrees\r\n", difference);
-    // Difference between bearings: 4.0 degrees
-    
-    printToConsole("Robot Should Turn %s by %.1f degrees\r\n\n\n", difference > 0 ? "left" : "right", fabs(difference));
-    HAL_Delay(1000);
+    // Optional: Add a small delay to prevent CPU hogging
+    HAL_Delay(10);
   }
   /* USER CODE END 3 */
 }
