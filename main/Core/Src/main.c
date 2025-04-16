@@ -85,6 +85,7 @@ int16_t mag_data[3];
 // This is the angle between magnetic north and true north
 // Look up the value for your area: https://www.ngdc.noaa.gov/geomag/calculators/magcalc.shtml
 #define MAGNETIC_DECLINATION_DEG -4.48f  // Purdue University's Magnetic Declination
+#define DEBUG_GPS_DATA 1
 
 /* USER CODE END Includes */
 
@@ -908,47 +909,20 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-    // Calculate the vector between the two GPS points
-
     // GPS test code
     char nmeaBuffer[256];
     if (getNMEASentence(nmeaBuffer, sizeof(nmeaBuffer))) {
       // Debug raw NMEA sentence
-      // printToConsole("\r\n--- Raw NMEA Sentence ---\r\n");
-      // printToConsole("Length: %d bytes\r\n", strlen(nmeaBuffer));
-      // printToConsole("Content: %s", nmeaBuffer);
+      if (DEBUG_GPS_DATA) {
+        printToConsole("\r\n--- Raw NMEA Sentence ---\r\n");
+        printToConsole("Length: %d bytes\r\n", strlen(nmeaBuffer));
+        printToConsole("Content: %s", nmeaBuffer);
+      }
       
-      if (strstr(nmeaBuffer, "$GNRMC")) {
-        printToConsole("\r\n=== GNRMC Message Detected ===\r\n");
-        
-        // Debug each field before parsing
-        char *saveptr;
-        char *token = strtok_r(nmeaBuffer, ",", &saveptr);
-        int fieldIndex = 0;
-        
-        while (token != NULL) {
-          switch(fieldIndex) {
-            case 0: printToConsole("Message ID: %s\r\n", token); break;
-            case 1: printToConsole("UTC Time: %s\r\n", token); break;
-            case 2: printToConsole("Status: %s (%s)\r\n", token, 
-                    (token[0] == 'A') ? "Active" : "Void"); break;
-            case 3: printToConsole("Latitude: %s\r\n", token); break;
-            case 4: printToConsole("N/S Indicator: %s\r\n", token); break;
-            case 5: printToConsole("Longitude: %s\r\n", token); break;
-            case 6: printToConsole("E/W Indicator: %s\r\n", token); break;
-            case 7: printToConsole("Speed (knots): %s\r\n", token); break;
-            case 8: printToConsole("Course: %s\r\n", token); break;
-            case 9: printToConsole("Date: %s\r\n", token); break;
-            default: printToConsole("Field %d: %s\r\n", fieldIndex, token);
-          }
-          token = strtok_r(NULL, ",", &saveptr);
-          fieldIndex++;
-        }
-        
-        printToConsole("Total fields: %d (expecting 12-13)\r\n", fieldIndex);
-        
-        // Try to parse with M8Q_ParseGNRMC
-        if (M8Q_ParseGNRMC(nmeaBuffer, &gps_data)) {
+      if (strstr(nmeaBuffer, "$GNRMC") ) {
+        printToConsole("\r\n=== GNRMC Message Detected ===\r\n");  
+        bool success = M8Q_ParseGNRMC(nmeaBuffer, &gps_data);
+        if (success && DEBUG_GPS_DATA) {
           printToConsole("\r\nParsing Successful!\r\n");
           printToConsole("Time: %02d:%02d:%02d UTC\r\n", 
               gps_data.hours, gps_data.minutes, gps_data.seconds);
@@ -961,22 +935,10 @@ int main(void)
             printToConsole("Speed: %.2f knots\r\n", gps_data.speed_knots);
             printToConsole("Course: %.2f degrees\r\n", gps_data.course);
           }
-        } else {
-          printToConsole("\r\nParsing Failed!\r\n");
-          printToConsole("Checksum validation: %s\r\n", 
-              (strchr(nmeaBuffer, '*') != NULL) ? "Present" : "Missing");
         }
-        printToConsole("=========================\r\n");
       }
     } else {
-      printToConsole("No Microcontroller GPS data received! Using dummy data\r\n");
-      gps_data.latitude = 38;
-      gps_data.lat_direction = 'N';
-      gps_data.longitude = -123;
-      gps_data.lon_direction = 'W';
-      gps_data.speed_knots = 10.0;
-      gps_data.course = 270.0;
-      gps_data.fix_valid = true;
+      printToConsole("No Microcontroller GPS data present! Please check the connection.\r\n");
     }
 
     if (true) {
