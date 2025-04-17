@@ -1059,7 +1059,7 @@ int main(void)
   HAL_UART_Receive_DMA(&huart1, bt_gps_buffer, BT_GPS_DATA_SIZE);
   printToConsole("Bluetooth GPS reception initialized!\r\n");
   
-  int size = strlen(tx_1);
+//   int size = strlen(tx_1);
 //   init_imu();
 
 
