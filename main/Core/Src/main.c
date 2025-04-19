@@ -86,6 +86,7 @@ int16_t mag_data[3];
 // Look up the value for your area: https://www.ngdc.noaa.gov/geomag/calculators/magcalc.shtml
 #define MAGNETIC_DECLINATION_DEG -4.48f  // Purdue University's Magnetic Declination
 #define DEBUG_GPS_DATA 1
+#define DEBUG_IMU_DATA 1
 
 // Motor pins (update these based on your hardware connections)
 #define MOTOR_LEFT_FWD_TIM       htim2
@@ -906,6 +907,12 @@ int main(void)
     // Process phone GPS data (currently using dummy data)
     // Store previous phone GPS data before updating
     memcpy(&previous_phone_gps_data, &phone_gps_data, sizeof(GPS_Data));
+
+    // Print the bearing from the IMU for debugging
+    if (DEBUG_IMU_DATA) {
+        float bearing = read_imu_data();
+        printToConsole("Current Bearing: %.1f degrees\r\n", bearing);
+    }
     
     // In a real implementation, you would receive phone GPS data here
     // For now, using dummy data
