@@ -54,7 +54,7 @@ static char* tx_2 = "Hello World";
 #define ACCEL_CONFIG     0x14
 
 // ICM-20948 specific defines
-#define ICM_CS_PIN       GPIO_PIN_12
+#define ICM_CS_PIN       GPIO_PIN_1
 #define ICM_CS_PORT      GPIOB
 
 // Add these defines for magnetometer registers (AK09916)
@@ -533,8 +533,8 @@ uint8_t SPI_Read(uint8_t reg) {
     uint8_t tx_data = reg | 0x80;  // Set the read bit (bit 7) to high
     activate_imu();    
     HAL_Delay(1);
-    HAL_SPI_Transmit(&hspi2, &tx_data, 1, HAL_MAX_DELAY);
-    HAL_SPI_Receive(&hspi2, &rx_data, 1, HAL_MAX_DELAY);
+    HAL_SPI_Transmit(&hspi5, &tx_data, 1, HAL_MAX_DELAY);
+    HAL_SPI_Receive(&hspi5, &rx_data, 1, HAL_MAX_DELAY);
     HAL_Delay(1);
     deactivate_imu();
     return rx_data;
@@ -546,7 +546,7 @@ void SPI_Write(uint8_t reg, uint8_t data) {
     tx_data[1] = data;
     activate_imu();
     HAL_Delay(1);
-    HAL_SPI_Transmit(&hspi2, tx_data, 2, HAL_MAX_DELAY);
+    HAL_SPI_Transmit(&hspi5, tx_data, 2, HAL_MAX_DELAY);
     HAL_Delay(1);
     deactivate_imu();
 }
@@ -1419,7 +1419,7 @@ static void MX_GPIO_Init(void)
   HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_12, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1|GPIO_PIN_12, GPIO_PIN_RESET);
 
   /*Configure GPIO pin : LD2_Pin */
   GPIO_InitStruct.Pin = LD2_Pin;
@@ -1428,8 +1428,8 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(LD2_GPIO_Port, &GPIO_InitStruct);
 
-  /*Configure GPIO pin : PB12 */
-  GPIO_InitStruct.Pin = GPIO_PIN_12;
+  /*Configure GPIO pins : PB1 PB12 */
+  GPIO_InitStruct.Pin = GPIO_PIN_1|GPIO_PIN_12;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
