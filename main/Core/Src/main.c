@@ -100,6 +100,7 @@ int16_t mag_data[3];
 // Look up the value for your area: https://www.ngdc.noaa.gov/geomag/calculators/magcalc.shtml
 #define MAGNETIC_DECLINATION_DEG -4.48f  // Purdue University's Magnetic Declination
 #define DEBUG_GPS_DATA 0
+#define DEBUG_IMU_DATA 1
 
 // Motor pins (update these based on your hardware connections)
 #define MOTOR_LEFT_FWD_TIM       htim2
@@ -1275,6 +1276,12 @@ memcpy(&gps_data, &dummy_gps, sizeof(GPS_Data));
 
     if (bt_gps_data_ready) {
         bt_gps_data_ready = false;
+    }
+
+    // Print the bearing from the IMU for debugging
+    if (DEBUG_IMU_DATA) {
+        float bearing = read_imu_data();
+        printToConsole("Current Bearing: %.1f degrees\r\n", bearing);
     }
     
     // Check if GPS data has changed
