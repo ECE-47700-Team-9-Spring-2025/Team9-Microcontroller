@@ -1360,27 +1360,42 @@ int main(void)
                 // Almost aligned, go straight at full calculated speed
                 leftSpeed = rightSpeed = (int)distanceSpeed;
             } else {
-                // Need to turn, but maintain more forward motion
+                // Need to turn
                 float turnReduction = turnIntensity * 0.8f;  // Reduce turn intensity effect
-                if (difference > 0) {
-                    // Turn left - maintain more forward motion on slower motor
-                    rightSpeed = (int)distanceSpeed;
-                    leftSpeed = (int)(distanceSpeed * (1.0f - turnReduction));
-                } else {
-                    // Turn right - maintain more forward motion on slower motor
-                    leftSpeed = (int)distanceSpeed;
-                    rightSpeed = (int)(distanceSpeed * (1.0f - turnReduction));
-                }
                 
-                // Ensure minimum forward motion even during sharp turns
-                int minTurnSpeed = (int)(distanceSpeed * 0.3f);  // At least 30% speed while turning
-                leftSpeed = max(leftSpeed, minTurnSpeed);
-                rightSpeed = max(rightSpeed, minTurnSpeed);
+                if (absDifference > 45.0f) {  // If angle difference is large, do a point turn
+                    int turnSpeed = (int)(MAX_SPEED * 0.7f);  // Use 70% of max speed for turning
+                    if (difference > 0) {
+                        // Turn left in place
+                        leftSpeed = -turnSpeed;
+                        rightSpeed = turnSpeed;
+                    } else {
+                        // Turn right in place
+                        leftSpeed = turnSpeed;
+                        rightSpeed = -turnSpeed;
+                    }
+                } else {
+                    // Normal turning behavior with forward motion
+                    if (difference > 0) {
+                        // Turn left while moving forward
+                        rightSpeed = (int)distanceSpeed;
+                        leftSpeed = (int)(distanceSpeed * (1.0f - turnReduction));
+                    } else {
+                        // Turn right while moving forward
+                        leftSpeed = (int)distanceSpeed;
+                        rightSpeed = (int)(distanceSpeed * (1.0f - turnReduction));
+                    }
+                    
+                    // Ensure minimum forward motion for small turns
+                    int minTurnSpeed = (int)(distanceSpeed * 0.3f);
+                    leftSpeed = fmax(leftSpeed, minTurnSpeed);
+                    rightSpeed = fmax(rightSpeed, minTurnSpeed);
+                }
             }
             
             // Apply motor speeds
-            printToConsole("Motor speeds: Left=%d, Right=%d (Distance: %.2fm, Turn: %.2f)\r\n", 
-                        leftSpeed, rightSpeed, gnss_vector.distance, turnIntensity);
+            printToConsole("Motor speeds: Left=%d, Right=%d (Distance: %.2fm, Turn: %.2f, Angle: %.1f)\r\n", 
+                        leftSpeed, rightSpeed, gnss_vector.distance, turnIntensity, absDifference);
             controlMotors(leftSpeed, rightSpeed);
 
             // Update previous data
