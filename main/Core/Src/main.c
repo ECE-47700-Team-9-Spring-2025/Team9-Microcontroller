@@ -155,7 +155,7 @@ GPS_Data phone_gps_data;
 GPS_Data previous_gps_data;       // Add this to store previous GPS data
 GPS_Data previous_phone_gps_data; // Add this to store previous phone GPS data
 GNSSVector gnss_vector;           // Store the calculated vector
-bool gnss_vector_valid = false;   // Flag to indicate if the vector is valid
+
 // DMA buffer for UART reception
 #define UART_RX_BUFFER_SIZE 512
 uint8_t uartRxBuffer[UART_RX_BUFFER_SIZE];
@@ -706,7 +706,7 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
             lastGpsProcessTime = currentTime;
             
             // Process GPS data
-            // ProcessGpsData(); // temporarily remove to test dummy gps data
+            ProcessGpsData(); // temporarily remove to test dummy gps data
         }
         
         // Restart DMA reception
@@ -725,9 +725,7 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
             
             // Process the received GPS data
             parsePhoneGPSData(bt_gps_buffer, &phone_gps_data);
-            bt_gps_data_ready = true;
-            
-            // Debug output (optional)
+
             printToConsole("\r\nBluetooth GPS data: fix=%s lat=%.6f%c lon=%.6f%c\r\n", 
                 phone_gps_data.fix_valid ? "VALID" : "INVALID",
                 phone_gps_data.latitude, phone_gps_data.lat_direction,
@@ -765,26 +763,33 @@ void controlMotors(int leftSpeed, int rightSpeed) {
     rightSpeed = (rightSpeed > 100) ? 100 : rightSpeed;
     rightSpeed = (rightSpeed < -100) ? -100 : rightSpeed;
     
+    // Scale function: maps 0-100 to 50-100
+    int scalePWM(int speed) {
+        if (speed == 0) return 0;  // Keep 0 as 0 for complete stop
+        int absSpeed = speed > 0 ? speed : -speed;
+        return 50 + (absSpeed * 50) / 100;  // Maps 0-100 to 50-100
+    }
+    
     // Set left motor
     if (leftSpeed >= 0) {
         // Forward
-        PWM_SetDutyCycle(&MOTOR_LEFT_FWD_TIM, MOTOR_LEFT_FWD_CHANNEL, leftSpeed);
+        PWM_SetDutyCycle(&MOTOR_LEFT_FWD_TIM, MOTOR_LEFT_FWD_CHANNEL, scalePWM(leftSpeed));
         PWM_SetDutyCycle(&MOTOR_LEFT_REV_TIM, MOTOR_LEFT_REV_CHANNEL, 0);
     } else {
         // Reverse
         PWM_SetDutyCycle(&MOTOR_LEFT_FWD_TIM, MOTOR_LEFT_FWD_CHANNEL, 0);
-        PWM_SetDutyCycle(&MOTOR_LEFT_REV_TIM, MOTOR_LEFT_REV_CHANNEL, -leftSpeed);
+        PWM_SetDutyCycle(&MOTOR_LEFT_REV_TIM, MOTOR_LEFT_REV_CHANNEL, scalePWM(-leftSpeed));
     }
     
     // Set right motor
     if (rightSpeed >= 0) {
         // Forward
-        PWM_SetDutyCycle(&MOTOR_RIGHT_FWD_TIM, MOTOR_RIGHT_FWD_CHANNEL, rightSpeed);
+        PWM_SetDutyCycle(&MOTOR_RIGHT_FWD_TIM, MOTOR_RIGHT_FWD_CHANNEL, scalePWM(rightSpeed));
         PWM_SetDutyCycle(&MOTOR_RIGHT_REV_TIM, MOTOR_RIGHT_REV_CHANNEL, 0);
     } else {
         // Reverse
         PWM_SetDutyCycle(&MOTOR_RIGHT_FWD_TIM, MOTOR_RIGHT_FWD_CHANNEL, 0);
-        PWM_SetDutyCycle(&MOTOR_RIGHT_REV_TIM, MOTOR_RIGHT_REV_CHANNEL, -rightSpeed);
+        PWM_SetDutyCycle(&MOTOR_RIGHT_REV_TIM, MOTOR_RIGHT_REV_CHANNEL, scalePWM(-rightSpeed));
     }
 }
 
@@ -1219,34 +1224,14 @@ int main(void)
 
   init_imu();
 
-  GPS_Data dummy_gps = {
-    .hours = 12,
-    .minutes = 0,
-    .seconds = 0,
-    .day = 19,
-    .month = 4,
-    .year = 2024,
-    .latitude = 40.4284f,    // Purdue West Lafayette latitude
-    .lat_direction = 'N',
-    .longitude = -86.9147f,  // Purdue West Lafayette longitude
-    .lon_direction = 'W',
-    .speed_knots = 0.0f,
-    .course = 0.0f,
-    .fix_valid = true
-};
-
-memcpy(&gps_data, &dummy_gps, sizeof(GPS_Data));
-
-//   resetBluetoothModule();
-  HAL_Delay(1000);
-//   initBluetooth();
+    //   resetBluetoothModule();
+    HAL_Delay(1000);
+    //   initBluetooth();
 
   // Clear the Bluetooth GPS buffer before starting reception
   memset(bt_gps_buffer, 0, BT_GPS_DATA_SIZE);
   HAL_UART_Receive_DMA(&huart1, bt_gps_buffer, BT_GPS_DATA_SIZE);
   printToConsole("Bluetooth GPS reception initialized!\r\n");
-  printToConsole("Using Dummy Device GPS @ 40.4284N, 86.9147W\r\n");
-
 
   // Initialize DMA for UART6 reception
   HAL_UARTEx_ReceiveToIdle_DMA(&huart6, uartRxBuffer, UART_RX_BUFFER_SIZE);
@@ -1267,6 +1252,7 @@ memcpy(&gps_data, &dummy_gps, sizeof(GPS_Data));
   
   // Optional: Print motor control initialization message
   printToConsole("Motor control initialized successfully\r\n");
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -1276,9 +1262,6 @@ memcpy(&gps_data, &dummy_gps, sizeof(GPS_Data));
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-    // Process phone GPS data (currently using dummy data)
-    // Store previous phone GPS data before updating
-    memcpy(&previous_phone_gps_data, &phone_gps_data, sizeof(GPS_Data));
 
     // Print the bearing from the IMU for debugging
     if (DEBUG_IMU_DATA) {
@@ -1286,37 +1269,16 @@ memcpy(&gps_data, &dummy_gps, sizeof(GPS_Data));
         printToConsole("Current Bearing: %.1f degrees\r\n", bearing);
     }
     
-    // In a real implementation, you would receive phone GPS data here
-    // For now, using dummy data
-    static uint32_t lastPhoneDataUpdate = 0;
-    uint32_t currentTime = HAL_GetTick();
-    
-    // Update dummy phone data periodically (every 5 seconds)
-    if (currentTime - lastPhoneDataUpdate > 5000) {
-        printToConsole("No Phone GPS Data Received! Using dummy phone GPS data\r\n");
-        phone_gps_data.latitude = 37;
-        phone_gps_data.lat_direction = 'N';
-        phone_gps_data.longitude = -122;
-        phone_gps_data.lon_direction = 'W';
-        phone_gps_data.speed_knots = 10.0;
-        phone_gps_data.course = 270.0;
-        phone_gps_data.fix_valid = true;
-        
-        lastPhoneDataUpdate = currentTime;
-    }
-    
     // Check if GPS data has changed
-    bool gps_data_changed = false;
-    bool phone_gps_data_changed = false;
-
-    bool new_data_received = gps_data_changed || phone_gps_data_changed || bt_gps_data_ready;
+    bool new_data_received = false;
 
     if (gps_data.fix_valid && 
         (gps_data.latitude != previous_gps_data.latitude ||
          gps_data.longitude != previous_gps_data.longitude ||
          gps_data.lat_direction != previous_gps_data.lat_direction ||
          gps_data.lon_direction != previous_gps_data.lon_direction)) {
-        gps_data_changed = true;
+        new_data_received = true;
+        printToConsole("GPS data changed\r\n");
     }
     
     if (phone_gps_data.fix_valid && 
@@ -1324,111 +1286,106 @@ memcpy(&gps_data, &dummy_gps, sizeof(GPS_Data));
          phone_gps_data.longitude != previous_phone_gps_data.longitude ||
          phone_gps_data.lat_direction != previous_phone_gps_data.lat_direction ||
          phone_gps_data.lon_direction != previous_phone_gps_data.lon_direction)) {
-        phone_gps_data_changed = true;
+        new_data_received = true;
+        printToConsole("Phone GPS data changed\r\n");
     }
     
     if (new_data_received) {
         printToConsole("\r\nNew data received!\r\n");
-        printToConsole("gps_data_changed: %d\r\n", gps_data_changed);
-        printToConsole("phone_gps_data_changed: %d\r\n", phone_gps_data_changed);
         printToConsole("gps_data.fix_valid: %d\r\n", gps_data.fix_valid);
         printToConsole("phone_gps_data.fix_valid: %d\r\n", phone_gps_data.fix_valid);
-    // Calculate vector between GPS positions only if data has changed
-    if ((gps_data_changed || phone_gps_data_changed) && 
-        gps_data.fix_valid && phone_gps_data.fix_valid) {
-        gnss_vector = calculateGNSSVector(gps_data, phone_gps_data);
-        gnss_vector_valid = true;
-        printToConsole("Recalculated GNSS vector\r\n");
-        
-        // Display vector information
-        printToConsole("Distance between points: %.2f meters\r\n", gnss_vector.distance);
-        printToConsole("Bearing between points: %.1f degrees\r\n", gnss_vector.bearing);
-        
-        // Get current bearing from IMU
-        float bearing = read_imu_data();
-        printToConsole("Current Bearing: %.1f degrees\r\n", bearing);
-        
-        // Calculate the difference between the two bearings
-        float difference = bearing - gnss_vector.bearing;
-        // Normalize the difference to -180 to 180 degrees
-        if (difference > 180) difference -= 360;
-        if (difference < -180) difference += 360;
-        
-        printToConsole("Difference between bearings: %.1f degrees\r\n", difference);
-        
-        printToConsole("Robot Should Turn %s by %.1f degrees\r\n\n\n", 
-            difference > 0 ? "left" : "right", fabs(difference));
+        // Calculate vector between GPS positions only if data has changed
+        if (new_data_received && gps_data.fix_valid && phone_gps_data.fix_valid) {
+            gnss_vector = calculateGNSSVector(gps_data, phone_gps_data);
+            printToConsole("Recalculated GNSS vector\r\n");
+            
+            // Display vector information
+            printToConsole("Distance between points: %.2f meters\r\n", gnss_vector.distance);
+            printToConsole("Bearing between points: %.1f degrees\r\n", gnss_vector.bearing);
+            
+            // Get current bearing from IMU
+            float bearing = read_imu_data();
+            printToConsole("Current Bearing: %.1f degrees\r\n", bearing);
+            
+            // Calculate the difference between the two bearings
+            float difference = bearing - gnss_vector.bearing;
+            // Normalize the difference to -180 to 180 degrees
+            if (difference > 180) difference -= 360;
+            if (difference < -180) difference += 360;
+            
+            printToConsole("Difference between bearings: %.1f degrees\r\n", difference);
+            
+            printToConsole("Robot Should Turn %s by %.1f degrees\r\n", 
+                difference > 0 ? "left" : "right", fabs(difference));
 
-
-        const int MAX_SPEED = 100;
-        const int MIN_SPEED = 20;
-        const float MAX_DISTANCE = 50.0f;  // meters
-        const float MIN_DISTANCE = 2.0f;   // meters
-        const float MAX_ANGLE_DIFF = 180.0f;
-        const float MIN_ANGLE_DIFF = 5.0f;
-        
-        // Calculate speed based on distance
-        float distanceSpeed = 0;
-        if (gnss_vector.distance > MAX_DISTANCE) {
-            distanceSpeed = MAX_SPEED;
-        } else if (gnss_vector.distance < MIN_DISTANCE) {
-            distanceSpeed = MIN_SPEED;
-        } else {
-            // Linear interpolation between MIN_SPEED and MAX_SPEED
-            distanceSpeed = MIN_SPEED + (MAX_SPEED - MIN_SPEED) * 
-                           ((gnss_vector.distance - MIN_DISTANCE) / (MAX_DISTANCE - MIN_DISTANCE));
-        }
-        
-        // Calculate turn intensity based on bearing difference
-        float turnIntensity = 0;
-        float absDifference = fabs(difference);
-        if (absDifference < MIN_ANGLE_DIFF) {
-            // Almost aligned, minimal turning
-            turnIntensity = 0.1f;
-        } else if (absDifference > MAX_ANGLE_DIFF) {
-            // Maximum turning
-            turnIntensity = 1.0f;
-        } else {
-            // Linear interpolation for turn intensity
-            turnIntensity = 0.1f + 0.9f * ((absDifference - MIN_ANGLE_DIFF) / 
-                                          (MAX_ANGLE_DIFF - MIN_ANGLE_DIFF));
-        }
-        
-        // Calculate left and right motor speeds
-        int leftSpeed = 0;
-        int rightSpeed = 0;
-        
-        if (absDifference < MIN_ANGLE_DIFF) {
-            // Almost aligned, go straight
-            leftSpeed = rightSpeed = (int)distanceSpeed;
-        } else {
-            // Need to turn
-            if (difference > 0) {
-                // Turn left
-                rightSpeed = (int)distanceSpeed;
-                leftSpeed = (int)(distanceSpeed * (1.0f - turnIntensity));
+            const int MAX_SPEED = 100;
+            const int MIN_SPEED = 20;
+            const float MAX_DISTANCE = 50.0f;  // meters
+            const float MIN_DISTANCE = 2.0f;   // meters
+            const float MAX_ANGLE_DIFF = 180.0f;
+            const float MIN_ANGLE_DIFF = 5.0f;
+            
+            // Calculate speed based on distance
+            float distanceSpeed = 0;
+            if (gnss_vector.distance > MAX_DISTANCE) {
+                distanceSpeed = MAX_SPEED;
+            } else if (gnss_vector.distance < MIN_DISTANCE) {
+                distanceSpeed = MIN_SPEED;
             } else {
-                // Turn right
-                leftSpeed = (int)distanceSpeed;
-                rightSpeed = (int)(distanceSpeed * (1.0f - turnIntensity));
+                // Linear interpolation between MIN_SPEED and MAX_SPEED
+                distanceSpeed = MIN_SPEED + (MAX_SPEED - MIN_SPEED) * 
+                            ((gnss_vector.distance - MIN_DISTANCE) / (MAX_DISTANCE - MIN_DISTANCE));
             }
-        }
-        
-        // Apply motor speeds
-        printToConsole("Motor speeds: Left=%d, Right=%d (Distance: %.2fm, Turn: %.2f)\r\n", 
-                      leftSpeed, rightSpeed, gnss_vector.distance, turnIntensity);
-        controlMotors(leftSpeed, rightSpeed);
-    } else {
-        printToConsole("Missing valid GPS fixes: Device %s, Phone %s\r\n",
-                      gps_data.fix_valid ? "OK" : "BAD",
-                      phone_gps_data.fix_valid ? "OK" : "BAD");
-        controlMotors(0, 0); // Stop motors if invalid data
-    }
+            
+            // Calculate turn intensity based on bearing difference
+            float turnIntensity = 0;
+            float absDifference = fabs(difference);
+            if (absDifference < MIN_ANGLE_DIFF) {
+                // Almost aligned, minimal turning
+                turnIntensity = 0.1f;
+            } else if (absDifference > MAX_ANGLE_DIFF) {
+                // Maximum turning
+                turnIntensity = 1.0f;
+            } else {
+                // Linear interpolation for turn intensity
+                turnIntensity = 0.1f + 0.9f * ((absDifference - MIN_ANGLE_DIFF) / 
+                                            (MAX_ANGLE_DIFF - MIN_ANGLE_DIFF));
+            }
+            
+            // Calculate left and right motor speeds
+            int leftSpeed = 0;
+            int rightSpeed = 0;
+            
+            if (absDifference < MIN_ANGLE_DIFF) {
+                // Almost aligned, go straight
+                leftSpeed = rightSpeed = (int)distanceSpeed;
+            } else {
+                // Need to turn
+                if (difference > 0) {
+                    // Turn left
+                    rightSpeed = (int)distanceSpeed;
+                    leftSpeed = (int)(distanceSpeed * (1.0f - turnIntensity));
+                } else {
+                    // Turn right
+                    leftSpeed = (int)distanceSpeed;
+                    rightSpeed = (int)(distanceSpeed * (1.0f - turnIntensity));
+                }
+            }
+            
+            // Apply motor speeds
+            printToConsole("Motor speeds: Left=%d, Right=%d (Distance: %.2fm, Turn: %.2f)\r\n", 
+                        leftSpeed, rightSpeed, gnss_vector.distance, turnIntensity);
+            controlMotors(leftSpeed, rightSpeed);
 
-    bt_gps_data_ready = false;
-    
-    // Optional: Add a small delay to prevent CPU hogging
-    HAL_Delay(10);
+            // Update previous data
+            memcpy(&previous_gps_data, &gps_data, sizeof(GPS_Data));
+            memcpy(&previous_phone_gps_data, &phone_gps_data, sizeof(GPS_Data));
+        } else {
+            printToConsole("Missing valid GPS fixes: Device %s, Phone %s\r\n",
+                        gps_data.fix_valid ? "OK" : "BAD",
+                        phone_gps_data.fix_valid ? "OK" : "BAD");
+            controlMotors(0, 0); // Stop motors if invalid data
+        }
     }
   }
   /* USER CODE END 3 */
@@ -1578,7 +1535,7 @@ static void MX_TIM2_Init(void)
   htim2.Instance = TIM2;
   htim2.Init.Prescaler = 0;
   htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim2.Init.Period = 4294967295;
+  htim2.Init.Period = 255;
   htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_Base_Init(&htim2) != HAL_OK)
@@ -1601,7 +1558,7 @@ static void MX_TIM2_Init(void)
     Error_Handler();
   }
   sConfigOC.OCMode = TIM_OCMODE_PWM1;
-  sConfigOC.Pulse = 0;
+  sConfigOC.Pulse = 200;
   sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
   sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
   if (HAL_TIM_PWM_ConfigChannel(&htim2, &sConfigOC, TIM_CHANNEL_1) != HAL_OK)
@@ -1631,6 +1588,7 @@ static void MX_TIM3_Init(void)
 
   /* USER CODE END TIM3_Init 0 */
 
+  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
   TIM_MasterConfigTypeDef sMasterConfig = {0};
   TIM_OC_InitTypeDef sConfigOC = {0};
 
@@ -1643,6 +1601,15 @@ static void MX_TIM3_Init(void)
   htim3.Init.Period = 255;
   htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim3.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim3) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  if (HAL_TIM_ConfigClockSource(&htim3, &sClockSourceConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
   if (HAL_TIM_PWM_Init(&htim3) != HAL_OK)
   {
     Error_Handler();
