@@ -69,7 +69,7 @@ static char* setup_cmds[] = {
 
 // ICM-20948 specific defines
 #define ICM_CS_PIN       GPIO_PIN_1
-#define ICM_CS_PORT      GPIOC
+#define ICM_CS_PORT      GPIOB
 
 // Add these defines for magnetometer registers (AK09916)
 #define MAG_WHO_AM_I        0x01  // Should return 0x09
@@ -99,7 +99,7 @@ int16_t mag_data[3];
 // This is the angle between magnetic north and true north
 // Look up the value for your area: https://www.ngdc.noaa.gov/geomag/calculators/magcalc.shtml
 #define MAGNETIC_DECLINATION_DEG -4.48f  // Purdue University's Magnetic Declination
-#define DEBUG_GPS_DATA 0
+#define DEBUG_GPS_DATA 1
 #define DEBUG_IMU_DATA 1
 
 // Motor pins (update these based on your hardware connections)
@@ -137,6 +137,7 @@ typedef enum {
 
 /* Private variables ---------------------------------------------------------*/
 SPI_HandleTypeDef hspi2;
+SPI_HandleTypeDef hspi5;
 
 TIM_HandleTypeDef htim2;
 TIM_HandleTypeDef htim3;
@@ -187,6 +188,7 @@ static void MX_USART1_UART_Init(void);
 static void MX_SPI2_Init(void);
 static void MX_TIM2_Init(void);
 static void MX_TIM3_Init(void);
+static void MX_SPI5_Init(void);
 /* USER CODE BEGIN PFP */
 float bytesToFloat(uint8_t* bytes);
 void parsePhoneGPSData(uint8_t* buffer, GPS_Data* gps);
@@ -809,8 +811,8 @@ uint8_t SPI_Read(uint8_t reg) {
     uint8_t tx_data = reg | 0x80;  // Set the read bit (bit 7) to high
     activate_imu();    
     HAL_Delay(1);
-    HAL_SPI_Transmit(&hspi2, &tx_data, 1, HAL_MAX_DELAY);
-    HAL_SPI_Receive(&hspi2, &rx_data, 1, HAL_MAX_DELAY);
+    HAL_SPI_Transmit(&hspi5, &tx_data, 1, HAL_MAX_DELAY);
+    HAL_SPI_Receive(&hspi5, &rx_data, 1, HAL_MAX_DELAY);
     HAL_Delay(1);
     deactivate_imu();
     return rx_data;
@@ -822,7 +824,7 @@ void SPI_Write(uint8_t reg, uint8_t data) {
     tx_data[1] = data;
     activate_imu();
     HAL_Delay(1);
-    HAL_SPI_Transmit(&hspi2, tx_data, 2, HAL_MAX_DELAY);
+    HAL_SPI_Transmit(&hspi5, tx_data, 2, HAL_MAX_DELAY);
     HAL_Delay(1);
     deactivate_imu();
 }
@@ -1212,6 +1214,7 @@ int main(void)
   MX_SPI2_Init();
   MX_TIM2_Init();
   MX_TIM3_Init();
+  MX_SPI5_Init();
   /* USER CODE BEGIN 2 */
 
   init_imu();
@@ -1273,15 +1276,33 @@ memcpy(&gps_data, &dummy_gps, sizeof(GPS_Data));
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-
-    if (bt_gps_data_ready) {
-        bt_gps_data_ready = false;
-    }
+    // Process phone GPS data (currently using dummy data)
+    // Store previous phone GPS data before updating
+    memcpy(&previous_phone_gps_data, &phone_gps_data, sizeof(GPS_Data));
 
     // Print the bearing from the IMU for debugging
     if (DEBUG_IMU_DATA) {
         float bearing = read_imu_data();
         printToConsole("Current Bearing: %.1f degrees\r\n", bearing);
+    }
+    
+    // In a real implementation, you would receive phone GPS data here
+    // For now, using dummy data
+    static uint32_t lastPhoneDataUpdate = 0;
+    uint32_t currentTime = HAL_GetTick();
+    
+    // Update dummy phone data periodically (every 5 seconds)
+    if (currentTime - lastPhoneDataUpdate > 5000) {
+        printToConsole("No Phone GPS Data Received! Using dummy phone GPS data\r\n");
+        phone_gps_data.latitude = 37;
+        phone_gps_data.lat_direction = 'N';
+        phone_gps_data.longitude = -122;
+        phone_gps_data.lon_direction = 'W';
+        phone_gps_data.speed_knots = 10.0;
+        phone_gps_data.course = 270.0;
+        phone_gps_data.fix_valid = true;
+        
+        lastPhoneDataUpdate = currentTime;
     }
     
     // Check if GPS data has changed
@@ -1338,8 +1359,7 @@ memcpy(&gps_data, &dummy_gps, sizeof(GPS_Data));
         printToConsole("Robot Should Turn %s by %.1f degrees\r\n\n\n", 
             difference > 0 ? "left" : "right", fabs(difference));
 
-        // Improved motor control algorithm based on both bearing difference and distance
-        // Define maximum speeds and thresholds
+
         const int MAX_SPEED = 100;
         const int MIN_SPEED = 20;
         const float MAX_DISTANCE = 50.0f;  // meters
@@ -1347,7 +1367,7 @@ memcpy(&gps_data, &dummy_gps, sizeof(GPS_Data));
         const float MAX_ANGLE_DIFF = 180.0f;
         const float MIN_ANGLE_DIFF = 5.0f;
         
-        // Calculate speed based on distance (linear mapping)
+        // Calculate speed based on distance
         float distanceSpeed = 0;
         if (gnss_vector.distance > MAX_DISTANCE) {
             distanceSpeed = MAX_SPEED;
@@ -1495,6 +1515,44 @@ static void MX_SPI2_Init(void)
   /* USER CODE BEGIN SPI2_Init 2 */
 
   /* USER CODE END SPI2_Init 2 */
+
+}
+
+/**
+  * @brief SPI5 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_SPI5_Init(void)
+{
+
+  /* USER CODE BEGIN SPI5_Init 0 */
+
+  /* USER CODE END SPI5_Init 0 */
+
+  /* USER CODE BEGIN SPI5_Init 1 */
+
+  /* USER CODE END SPI5_Init 1 */
+  /* SPI5 parameter configuration*/
+  hspi5.Instance = SPI5;
+  hspi5.Init.Mode = SPI_MODE_MASTER;
+  hspi5.Init.Direction = SPI_DIRECTION_2LINES;
+  hspi5.Init.DataSize = SPI_DATASIZE_8BIT;
+  hspi5.Init.CLKPolarity = SPI_POLARITY_HIGH;
+  hspi5.Init.CLKPhase = SPI_PHASE_2EDGE;
+  hspi5.Init.NSS = SPI_NSS_SOFT;
+  hspi5.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_16;
+  hspi5.Init.FirstBit = SPI_FIRSTBIT_MSB;
+  hspi5.Init.TIMode = SPI_TIMODE_DISABLE;
+  hspi5.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
+  hspi5.Init.CRCPolynomial = 10;
+  if (HAL_SPI_Init(&hspi5) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN SPI5_Init 2 */
+
+  /* USER CODE END SPI5_Init 2 */
 
 }
 
@@ -1753,23 +1811,10 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOB_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_1, GPIO_PIN_RESET);
-
-  /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_RESET);
 
-  /*Configure GPIO pin : B1_Pin */
-  GPIO_InitStruct.Pin = B1_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  HAL_GPIO_Init(B1_GPIO_Port, &GPIO_InitStruct);
-
-  /*Configure GPIO pin : PC1 */
-  GPIO_InitStruct.Pin = GPIO_PIN_1;
-  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1|GPIO_PIN_12, GPIO_PIN_RESET);
 
   /*Configure GPIO pin : LD2_Pin */
   GPIO_InitStruct.Pin = LD2_Pin;
@@ -1777,6 +1822,13 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(LD2_GPIO_Port, &GPIO_InitStruct);
+
+  /*Configure GPIO pins : PB1 PB12 */
+  GPIO_InitStruct.Pin = GPIO_PIN_1|GPIO_PIN_12;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
 /* USER CODE BEGIN MX_GPIO_Init_2 */
 /* USER CODE END MX_GPIO_Init_2 */
