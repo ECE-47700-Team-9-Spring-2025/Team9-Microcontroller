@@ -100,7 +100,7 @@ int16_t mag_data[3];
 // Look up the value for your area: https://www.ngdc.noaa.gov/geomag/calculators/magcalc.shtml
 #define MAGNETIC_DECLINATION_DEG -4.48f  // Purdue University's Magnetic Declination
 #define DEBUG_GPS_DATA 1
-#define DEBUG_IMU_DATA 1
+#define DEBUG_IMU_DATA 0
 
 // Motor pins (update these based on your hardware connections)
 #define MOTOR_LEFT_FWD_TIM       htim2
@@ -749,6 +749,13 @@ void PWM_SetDutyCycle(TIM_HandleTypeDef *htim, uint32_t Channel, uint16_t dutyCy
     __HAL_TIM_SET_COMPARE(htim, Channel, pulse);
 }
 
+// Scale function: maps 0-100 to 50-100
+int scalePWM(int speed) {
+    if (speed == 0) return 0;  // Keep 0 as 0 for complete stop
+    int absSpeed = speed > 0 ? speed : -speed;
+    return 50 + (absSpeed * 50) / 100;  // Maps 0-100 to 50-100
+}
+
 /**
  * Control both motors with a single function
  * @param leftSpeed: Speed for left motor (-100 to +100)
@@ -762,13 +769,6 @@ void controlMotors(int leftSpeed, int rightSpeed) {
     leftSpeed = (leftSpeed < -100) ? -100 : leftSpeed;
     rightSpeed = (rightSpeed > 100) ? 100 : rightSpeed;
     rightSpeed = (rightSpeed < -100) ? -100 : rightSpeed;
-    
-    // Scale function: maps 0-100 to 50-100
-    int scalePWM(int speed) {
-        if (speed == 0) return 0;  // Keep 0 as 0 for complete stop
-        int absSpeed = speed > 0 ? speed : -speed;
-        return 50 + (absSpeed * 50) / 100;  // Maps 0-100 to 50-100
-    }
     
     // Set left motor
     if (leftSpeed >= 0) {
@@ -1320,36 +1320,36 @@ int main(void)
 
             const int MAX_SPEED = 100;
             const int MIN_SPEED = 20;
-            const float MAX_DISTANCE = 50.0f;  // meters
-            const float MIN_DISTANCE = 2.0f;   // meters
-            const float MAX_ANGLE_DIFF = 180.0f;
-            const float MIN_ANGLE_DIFF = 5.0f;
+            const float MAX_DISTANCE = 10.0f;  // meters
+            const float MIN_DISTANCE = 1.0f;   // meters
+            const float MAX_ANGLE_DIFF = 90.0f;
+            const float MIN_ANGLE_DIFF = 2.0f;
             
-            // Calculate speed based on distance
+            // Calculate base forward speed based on distance
             float distanceSpeed = 0;
             if (gnss_vector.distance > MAX_DISTANCE) {
                 distanceSpeed = MAX_SPEED;
             } else if (gnss_vector.distance < MIN_DISTANCE) {
                 distanceSpeed = MIN_SPEED;
             } else {
-                // Linear interpolation between MIN_SPEED and MAX_SPEED
-                distanceSpeed = MIN_SPEED + (MAX_SPEED - MIN_SPEED) * 
-                            ((gnss_vector.distance - MIN_DISTANCE) / (MAX_DISTANCE - MIN_DISTANCE));
+                // More aggressive speed curve using square root for better low-speed control
+                float normalizedDistance = (gnss_vector.distance - MIN_DISTANCE) / (MAX_DISTANCE - MIN_DISTANCE);
+                distanceSpeed = MIN_SPEED + (MAX_SPEED - MIN_SPEED) * sqrtf(normalizedDistance);
             }
             
             // Calculate turn intensity based on bearing difference
             float turnIntensity = 0;
             float absDifference = fabs(difference);
             if (absDifference < MIN_ANGLE_DIFF) {
-                // Almost aligned, minimal turning
-                turnIntensity = 0.1f;
+                // Almost aligned, very minimal turning
+                turnIntensity = 0.05f;  // Reduced from 0.1f for straighter forward motion
             } else if (absDifference > MAX_ANGLE_DIFF) {
-                // Maximum turning
+                // Maximum turning - make it more aggressive
                 turnIntensity = 1.0f;
             } else {
-                // Linear interpolation for turn intensity
-                turnIntensity = 0.1f + 0.9f * ((absDifference - MIN_ANGLE_DIFF) / 
-                                            (MAX_ANGLE_DIFF - MIN_ANGLE_DIFF));
+                // More aggressive turn response curve
+                turnIntensity = 0.05f + 0.95f * powf((absDifference - MIN_ANGLE_DIFF) / 
+                                                  (MAX_ANGLE_DIFF - MIN_ANGLE_DIFF), 0.7f);
             }
             
             // Calculate left and right motor speeds
@@ -1357,19 +1357,25 @@ int main(void)
             int rightSpeed = 0;
             
             if (absDifference < MIN_ANGLE_DIFF) {
-                // Almost aligned, go straight
+                // Almost aligned, go straight at full calculated speed
                 leftSpeed = rightSpeed = (int)distanceSpeed;
             } else {
-                // Need to turn
+                // Need to turn, but maintain more forward motion
+                float turnReduction = turnIntensity * 0.8f;  // Reduce turn intensity effect
                 if (difference > 0) {
-                    // Turn left
+                    // Turn left - maintain more forward motion on slower motor
                     rightSpeed = (int)distanceSpeed;
-                    leftSpeed = (int)(distanceSpeed * (1.0f - turnIntensity));
+                    leftSpeed = (int)(distanceSpeed * (1.0f - turnReduction));
                 } else {
-                    // Turn right
+                    // Turn right - maintain more forward motion on slower motor
                     leftSpeed = (int)distanceSpeed;
-                    rightSpeed = (int)(distanceSpeed * (1.0f - turnIntensity));
+                    rightSpeed = (int)(distanceSpeed * (1.0f - turnReduction));
                 }
+                
+                // Ensure minimum forward motion even during sharp turns
+                int minTurnSpeed = (int)(distanceSpeed * 0.3f);  // At least 30% speed while turning
+                leftSpeed = max(leftSpeed, minTurnSpeed);
+                rightSpeed = max(rightSpeed, minTurnSpeed);
             }
             
             // Apply motor speeds
