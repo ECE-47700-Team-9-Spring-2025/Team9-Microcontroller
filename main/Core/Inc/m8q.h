@@ -38,6 +38,7 @@ typedef struct {
 
 // Function prototypes
 bool M8Q_ParseGNRMC(const char* sentence, GPS_Data* data);
+bool M8Q_ParseGNGLL(const char* sentence, GPS_Data* data);
 GNSSVector calculateGNSSVector(GPS_Data gps_data1, GPS_Data gps_data2);
 
 #endif // M8Q_H

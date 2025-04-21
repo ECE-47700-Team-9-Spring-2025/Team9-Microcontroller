@@ -30,7 +30,21 @@
 
 static uint8_t rx_buf[20];
 static char* tx_1 = "AT";
-static char* tx_2 = "Hello World";
+// Define setup commands for HM-10 Bluetooth module
+static char* setup_cmds[] = {
+    "AT+ROLE0",      // Set as peripheral
+    "AT+ADVI3",      // Set advertising interval to 318.75ms (better compatibility)
+    "AT+ADTY0",      // Allow advertising and connections
+    "AT+FLAG1",      // Enable advertising flag (critical for iOS visibility)
+    "AT+NAMEFairway",
+    "AT+SHOW1",
+    "AT+IBEA0",
+    "AT+UUID0xFFE0", // Set standard service UUID
+    "AT+CHAR0xFFE1", // Set standard characteristic UUID
+    "AT+POWE3",      // Max transmit power (6dbm)
+    "AT+RESET",      // Reboot module
+    "AT+NAME?"       // Verify name
+};
 
 // ICM-20948 Register addresses - Updated for correct bank 0 addresses
 #define WHO_AM_I_REG     0x00    
@@ -85,7 +99,7 @@ int16_t mag_data[3];
 // This is the angle between magnetic north and true north
 // Look up the value for your area: https://www.ngdc.noaa.gov/geomag/calculators/magcalc.shtml
 #define MAGNETIC_DECLINATION_DEG -4.48f  // Purdue University's Magnetic Declination
-#define DEBUG_GPS_DATA 1
+#define DEBUG_GPS_DATA 0
 
 // Motor pins (update these based on your hardware connections)
 #define MOTOR_LEFT_FWD_TIM       htim2
@@ -146,6 +160,11 @@ uint8_t uartRxBuffer[UART_RX_BUFFER_SIZE];
 volatile uint16_t rxHead = 0;
 volatile uint16_t searchPos = 0;
 
+// Add this for Bluetooth GPS reception - 26 bytes as per the app's specification
+#define BT_GPS_DATA_SIZE 26
+uint8_t bt_gps_buffer[BT_GPS_DATA_SIZE];
+volatile bool bt_gps_data_ready = false;
+
 // Add these global variables for rolling average
 #define ROLLING_AVG_SAMPLES 3
 static int16_t accel_history[ROLLING_AVG_SAMPLES][3] = {0};
@@ -168,7 +187,8 @@ static void MX_SPI2_Init(void);
 static void MX_TIM2_Init(void);
 static void MX_TIM3_Init(void);
 /* USER CODE BEGIN PFP */
-
+float bytesToFloat(uint8_t* bytes);
+void parsePhoneGPSData(uint8_t* buffer, GPS_Data* gps);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -298,6 +318,244 @@ GPS_Status parseGPSTXT(const char* message) {
         return GPS_STATUS_ERROR;
     }
     return GPS_STATUS_NO_FIX;
+}
+
+bool printCurrentGpsOutput(void) {
+    char buffer[256];
+    static GPS_Status lastStatus = GPS_STATUS_INIT;
+    static uint32_t noFixCount = 0;
+    static uint32_t lastDebugPrint = 0;
+    const uint32_t DEBUG_PRINT_INTERVAL = 1000; // Print debug every 1 second
+    
+    memset(buffer, 0, sizeof(buffer));
+    memset(&gps_data, 0, sizeof(GPS_Data));
+
+    if (readUntilNewline(buffer, sizeof(buffer))) {
+        // Debug message with timestamp
+        uint32_t currentTick = HAL_GetTick();
+        if (currentTick - lastDebugPrint >= DEBUG_PRINT_INTERVAL) {
+            printToConsole("\r\n=== GPS Debug [%lu ms] ===\r\n", currentTick);
+            lastDebugPrint = currentTick;
+        }
+
+        // Validate NMEA message format
+        if (buffer[0] != '$') {
+            printToConsole("ERROR: Invalid NMEA format\r\n");
+            return false;
+        }
+        
+        // Test buffer
+        // const char* buffer = "$GNRMC,201850.00,A,4025.69979,N,08654.69118,W,0.256,,240225,08654.69118,W,0.256,,240225,,,A*73";
+        
+        // Parse message type
+        if (strstr(buffer, "$GNRMC")) {
+            printToConsole("Message Type: RMC (Position/Speed/Time)\r\n");
+            
+            if (M8Q_ParseGNRMC(buffer, &gps_data)) {
+                if (!gps_data.fix_valid) {
+                    noFixCount++;
+                    printToConsole("Status: NO FIX (Waiting: %lu sec)\r\n", noFixCount);
+                    printToConsole("Time: %02d:%02d:%02d UTC\r\n", 
+                        gps_data.hours, 
+                        gps_data.minutes, 
+                        gps_data.seconds);
+                    printToConsole("Troubleshooting:\r\n");
+                    printToConsole("- Ensure clear view of sky\r\n");
+                    printToConsole("- Wait for satellite acquisition (can take 1-5 min)\r\n");
+                    printToConsole("- Check antenna connection\r\n");
+                } else {
+                    noFixCount = 0;
+                    printToConsole("\r\n=== GPS Location Update ===\r\n");
+                    printToConsole("Time: %02d:%02d:%02d UTC\r\n", 
+                        gps_data.hours, 
+                        gps_data.minutes, 
+                        gps_data.seconds);
+                    
+                    printToConsole("Date: %02d/%02d/%04d\r\n", 
+                        gps_data.day, 
+                        gps_data.month, 
+                        gps_data.year);
+                    
+                    // Convert coordinates to degrees and decimal minutes format
+                    int lat_deg = (int)gps_data.latitude;
+                    double lat_min = (gps_data.latitude - lat_deg) * 60;
+                    int lon_deg = (int)gps_data.longitude;
+                    double lon_min = (gps_data.longitude - lon_deg) * 60;
+                    
+                    printToConsole("Position:\r\n");
+                    printToConsole("  %d°%.4f' %c\r\n", 
+                        abs(lat_deg), fabs(lat_min), gps_data.lat_direction);
+                    printToConsole("  %d°%.4f' %c\r\n", 
+                        abs(lon_deg), fabs(lon_min), gps_data.lon_direction);
+                    
+                    if (gps_data.speed_knots > 0.5) { // Only show speed if moving
+                        printToConsole("Speed: %.1f km/h\r\n", 
+                            gps_data.speed_knots * 1.852); // Convert knots to km/h
+                        printToConsole("Heading: %.1f°\r\n", 
+                            gps_data.course);
+                    }
+                    
+                    printToConsole("=========================\r\n");
+                }
+            } else {
+                printToConsole("ERROR: Failed to parse RMC message\r\n");
+                printToConsole("Raw: %s\r\n", buffer);
+            }
+            return true;
+        } 
+        else if (strstr(buffer, "$GNGGA")) {
+            printToConsole("Message Type: GGA (GPS Fix Data)\r\n");
+            
+            // Parse GGA message fields
+            char *saveptr;
+            char *token = strtok_r(buffer, ",", &saveptr);
+            int field = 0;
+            
+            while (token != NULL) {
+                switch(field) {
+                    case 6: // Fix quality
+                        printToConsole("Fix Quality: ");
+                        switch(atoi(token)) {
+                            case 0: printToConsole("Invalid\r\n"); break;
+                            case 1: printToConsole("GPS Fix\r\n"); break;
+                            case 2: printToConsole("DGPS Fix\r\n"); break;
+                            default: printToConsole("Unknown (%s)\r\n", token); break;
+                        }
+                        break;
+                    case 7: // Satellites in use
+                        printToConsole("Satellites: %s in use\r\n", token);
+                        break;
+                    case 8: // HDOP
+                        {
+                            float hdop = atof(token);
+                            printToConsole("HDOP: %.1f ", hdop);
+                            if (hdop < 1.0) printToConsole("(Excellent)\r\n");
+                            else if (hdop < 2.0) printToConsole("(Good)\r\n");
+                            else if (hdop < 5.0) printToConsole("(Moderate)\r\n");
+                            else printToConsole("(Poor)\r\n");
+                        }
+                        break;
+                }
+                field++;
+                token = strtok_r(NULL, ",", &saveptr);
+            }
+            return true;
+        }
+        else if (strstr(buffer, "$GNTXT")) {
+            GPS_Status status = parseGPSTXT(buffer);
+            if (status != lastStatus) {
+                switch(status) {
+                    case GPS_STATUS_INIT:
+                        printToConsole("GPS Status: Initializing antenna\r\n");
+                        break;
+                    case GPS_STATUS_OK:
+                        printToConsole("GPS Status: Antenna OK, waiting for fix\r\n");
+                        break;
+                    case GPS_STATUS_ERROR:
+                        printToConsole("GPS Status: Antenna error detected!\r\n");
+                        break;
+                    default:
+                        break;
+                }
+                lastStatus = status;
+            }
+            printToConsole("GPS Info Message: %s", buffer);
+            return true;
+        }
+        else {
+            printToConsole("Message Type: Other (%.*s)\r\n", 5, buffer);
+            return true;
+        }
+    } else {
+        printToConsole("ERROR: Failed to read NMEA sentence\r\n");
+        return false;
+    }
+}
+
+
+void resetBluetoothModule(void) {
+    // 1. Send software reset command
+    char reset_cmd[] = "AT+RESET\r\n";
+    HAL_UART_Transmit(&huart1, (uint8_t*)reset_cmd, strlen(reset_cmd), HAL_MAX_DELAY);
+    
+    // 2. Wait for full reboot (critical!)
+    HAL_Delay(2000);  // HM-10 needs at least 1.5 seconds to reboot
+    
+    // 3. Clear all existing configurations
+    char clear_cmd[] = "AT+RENEW\r\n";  // Restore factory defaults
+    HAL_UART_Transmit(&huart1, (uint8_t*)clear_cmd, strlen(clear_cmd), HAL_MAX_DELAY);
+    HAL_Delay(1000);
+    
+    // 4. Clear receive buffer
+    memset(rx_buf, 0, sizeof(rx_buf));
+}
+
+
+// Function to initialize HM-10 BLE module
+void initBluetooth(void) {
+    printToConsole("\r\n== Starting HM-10 Bluetooth Initialization ==\r\n");
+    uint8_t response_received = 0;
+    
+    // Initial check - send AT to see if module responds
+    printToConsole("Sending test command: AT\r\n");
+    int size = strlen(tx_1);
+    HAL_UART_Receive_DMA(&huart1, rx_buf, size);
+    HAL_UART_Transmit(&huart1, (uint8_t*)tx_1, size, HAL_MAX_DELAY);
+    
+    // Wait for response with timeout
+    uint32_t startTime = HAL_GetTick();
+    while (!response_received && (HAL_GetTick() - startTime < 5000)) {
+        if (strstr((char*)rx_buf, "OK")) {
+            response_received = 1;
+            printToConsole("\r\nBLE module responded OK to test command\r\n");
+        }
+        HAL_Delay(50);
+    }
+    
+    if (!response_received) {
+        printToConsole("ERROR: No response from BLE module! Check connections\r\n");
+        return;
+    }
+    
+    // Process each setup command
+    for (int i = 0; i < sizeof(setup_cmds)/sizeof(setup_cmds[0]); i++) {
+        // Cancel any ongoing reception
+        HAL_UART_AbortReceive(&huart1);
+
+        // Clear response buffer
+        memset(rx_buf, 0, sizeof(rx_buf));
+        response_received = 0;
+        
+        // Get command length
+        size = strlen(setup_cmds[i]);
+        
+        printToConsole("Sending: %s\r\n", setup_cmds[i]);
+        
+        // Start reception before sending command
+        HAL_UART_Receive_DMA(&huart1, rx_buf, sizeof(rx_buf));
+        HAL_UART_Transmit(&huart1, (uint8_t*)setup_cmds[i], size, HAL_MAX_DELAY);
+        
+        // Wait for response with timeout (slightly longer for RESET command)
+        int timeout = (strstr(setup_cmds[i], "RESET") != NULL) ? 10000 : 10000;
+        startTime = HAL_GetTick();
+        
+        while (!response_received && (HAL_GetTick() - startTime < timeout)) {
+            if (strstr((char*)rx_buf, "OK")) {
+                response_received = 1;
+                printToConsole("Response: %s\r\n", rx_buf);
+            }
+            HAL_Delay(50);
+        }
+        
+        if (!response_received) {
+            printToConsole("WARNING: No response to command: %s\r\n", setup_cmds[i]);
+        }
+        
+        // Add delay between commands
+        HAL_Delay(1000);
+    }
+    
+    printToConsole("== HM-10 Bluetooth Initialization Complete ==\r\n");
 }
 
 bool getNMEASentence(char *buffer, size_t maxSize) {
@@ -445,7 +703,7 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
             lastGpsProcessTime = currentTime;
             
             // Process GPS data
-            ProcessGpsData();
+            // ProcessGpsData(); // temporarily remove to test dummy gps data
         }
         
         // Restart DMA reception
@@ -456,12 +714,31 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
 
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
-    if(huart == &huart1) {
-        // Log the received data
-        printToConsole("Received (callback): %s", rx_buf);
+    if (huart->Instance == USART1) {
+        // Check if we have received GPS data from the app (26 bytes)
+        if (huart->RxXferSize == BT_GPS_DATA_SIZE) {
+            // Store previous phone GPS data before updating
+            memcpy(&previous_phone_gps_data, &phone_gps_data, sizeof(GPS_Data));
+            
+            // Process the received GPS data
+            parsePhoneGPSData(bt_gps_buffer, &phone_gps_data);
+            bt_gps_data_ready = true;
+            
+            // Debug output (optional)
+            printToConsole("\r\nBluetooth GPS data: fix=%s lat=%.6f%c lon=%.6f%c\r\n", 
+                phone_gps_data.fix_valid ? "VALID" : "INVALID",
+                phone_gps_data.latitude, phone_gps_data.lat_direction,
+                phone_gps_data.longitude, phone_gps_data.lon_direction);
+            
+        } else {
+            // Original behavior for other data
+            printToConsole("\r\nReceived (callback): %s", rx_buf);
+        }
         
-        // Restart the reception for the next data
-        HAL_UART_Receive_DMA(&huart1, rx_buf, sizeof(rx_buf));
+        // Restart the reception for GPS data
+        memset(bt_gps_buffer, 0, BT_GPS_DATA_SIZE);
+
+        HAL_UART_Receive_DMA(&huart1, bt_gps_buffer, BT_GPS_DATA_SIZE);
     }
 }
 
@@ -826,6 +1103,76 @@ float read_imu_data(void) {
     return bearing;
 }
 
+
+/**
+ * Convert bytes to float considering potential endianness differences
+ * @param bytes Pointer to 4 bytes of data
+ * @return Converted float value
+ */
+float bytesToFloat(uint8_t* bytes) {
+    union {
+        float value;
+        uint8_t b[4];
+    } u;
+    
+    // Maintain byte order (React Native uses little-endian)
+    memcpy(u.b, bytes, 4);
+    return u.value;
+}
+
+/**
+ * Parse binary GPS data received from phone app via Bluetooth
+ * @param buffer 26-byte buffer containing GPS data
+ * @param gps Pointer to GPS_Data structure to populate
+ */
+void parsePhoneGPSData(uint8_t* buffer, GPS_Data* gps) {
+    // Validate checksum first
+    uint8_t checksum = 0;
+    for(int i = 0; i < 25; i++) checksum ^= buffer[i];
+    
+    if(checksum != buffer[25]) {
+        printToConsole("Checksum failed: %02X vs %02X\r\n", checksum, buffer[25]);
+        gps->fix_valid = false;
+        return;
+    }
+
+    // Parse time (3 bytes)
+    gps->hours = buffer[0];
+    gps->minutes = buffer[1];
+    gps->seconds = buffer[2];
+    
+    // Parse date (3 bytes + 2 byte year)
+    gps->day = buffer[3];
+    gps->month = buffer[4];
+    gps->year = (buffer[5] | (buffer[6] << 8));  // Full 16-bit year
+    
+    // Parse coordinates (4 byte float + 1 byte direction each)
+    gps->latitude = bytesToFloat(&buffer[7]);
+    gps->lat_direction = buffer[11];
+    gps->longitude = bytesToFloat(&buffer[12]);
+    gps->lon_direction = buffer[16];
+    
+    // Parse movement (4 byte floats)
+    gps->speed_knots = bytesToFloat(&buffer[17]);
+    gps->course = bytesToFloat(&buffer[21]);
+    
+    // Validate directions and coordinates
+    gps->fix_valid = ((gps->lat_direction == 'N' || gps->lat_direction == 'S') &&
+                     (gps->lon_direction == 'E' || gps->lon_direction == 'W') &&
+                     fabs(gps->latitude) <= 90.0f &&
+                     fabs(gps->longitude) <= 180.0f);
+
+    // Apply direction signs
+    if(gps->lat_direction == 'S') gps->latitude = -gps->latitude;
+    if(gps->lon_direction == 'W') gps->longitude = -gps->longitude;
+
+    // Debug output
+    printToConsole("Parsed Phone GPS: %.6f%c, %.6f%c Speed: %.2f Course: %.2f\r\n",
+        gps->latitude, gps->lat_direction,
+        gps->longitude, gps->lon_direction,
+        gps->speed_knots, gps->course);
+}
+
 /* USER CODE END 0 */
 
 /**
@@ -866,11 +1213,36 @@ int main(void)
   MX_TIM3_Init();
   /* USER CODE BEGIN 2 */
 
-  int size = strlen(tx_1);
   init_imu();
-  HAL_UART_Receive_DMA(&huart1, rx_buf, size);
-  HAL_UART_Transmit_DMA(&huart1, (uint8_t*)tx_1, size);
-//   printToConsole("Sent: %s", tx_1);
+
+  GPS_Data dummy_gps = {
+    .hours = 12,
+    .minutes = 0,
+    .seconds = 0,
+    .day = 19,
+    .month = 4,
+    .year = 2024,
+    .latitude = 40.4284f,    // Purdue West Lafayette latitude
+    .lat_direction = 'N',
+    .longitude = -86.9147f,  // Purdue West Lafayette longitude
+    .lon_direction = 'W',
+    .speed_knots = 0.0f,
+    .course = 0.0f,
+    .fix_valid = true
+};
+
+memcpy(&gps_data, &dummy_gps, sizeof(GPS_Data));
+
+//   resetBluetoothModule();
+  HAL_Delay(1000);
+//   initBluetooth();
+
+  // Clear the Bluetooth GPS buffer before starting reception
+  memset(bt_gps_buffer, 0, BT_GPS_DATA_SIZE);
+  HAL_UART_Receive_DMA(&huart1, bt_gps_buffer, BT_GPS_DATA_SIZE);
+  printToConsole("Bluetooth GPS reception initialized!\r\n");
+  printToConsole("Using Dummy Device GPS @ 40.4284N, 86.9147W\r\n");
+
 
   // Initialize DMA for UART6 reception
   HAL_UARTEx_ReceiveToIdle_DMA(&huart6, uartRxBuffer, UART_RX_BUFFER_SIZE);
@@ -900,33 +1272,17 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-    // Process phone GPS data (currently using dummy data)
-    // Store previous phone GPS data before updating
-    memcpy(&previous_phone_gps_data, &phone_gps_data, sizeof(GPS_Data));
-    
-    // In a real implementation, you would receive phone GPS data here
-    // For now, using dummy data
-    static uint32_t lastPhoneDataUpdate = 0;
-    uint32_t currentTime = HAL_GetTick();
-    
-    // Update dummy phone data periodically (every 5 seconds)
-    if (currentTime - lastPhoneDataUpdate > 5000) {
-        printToConsole("No Phone GPS Data Received! Using dummy phone GPS data\r\n");
-        phone_gps_data.latitude = 37;
-        phone_gps_data.lat_direction = 'N';
-        phone_gps_data.longitude = -122;
-        phone_gps_data.lon_direction = 'W';
-        phone_gps_data.speed_knots = 10.0;
-        phone_gps_data.course = 270.0;
-        phone_gps_data.fix_valid = true;
-        
-        lastPhoneDataUpdate = currentTime;
+
+    if (bt_gps_data_ready) {
+        bt_gps_data_ready = false;
     }
     
     // Check if GPS data has changed
     bool gps_data_changed = false;
     bool phone_gps_data_changed = false;
-    
+
+    bool new_data_received = gps_data_changed || phone_gps_data_changed || bt_gps_data_ready;
+
     if (gps_data.fix_valid && 
         (gps_data.latitude != previous_gps_data.latitude ||
          gps_data.longitude != previous_gps_data.longitude ||
@@ -943,6 +1299,12 @@ int main(void)
         phone_gps_data_changed = true;
     }
     
+    if (new_data_received) {
+        printToConsole("\r\nNew data received!\r\n");
+        printToConsole("gps_data_changed: %d\r\n", gps_data_changed);
+        printToConsole("phone_gps_data_changed: %d\r\n", phone_gps_data_changed);
+        printToConsole("gps_data.fix_valid: %d\r\n", gps_data.fix_valid);
+        printToConsole("phone_gps_data.fix_valid: %d\r\n", phone_gps_data.fix_valid);
     // Calculate vector between GPS positions only if data has changed
     if ((gps_data_changed || phone_gps_data_changed) && 
         gps_data.fix_valid && phone_gps_data.fix_valid) {
@@ -1029,10 +1391,18 @@ int main(void)
         printToConsole("Motor speeds: Left=%d, Right=%d (Distance: %.2fm, Turn: %.2f)\r\n", 
                       leftSpeed, rightSpeed, gnss_vector.distance, turnIntensity);
         controlMotors(leftSpeed, rightSpeed);
+    } else {
+        printToConsole("Missing valid GPS fixes: Device %s, Phone %s\r\n",
+                      gps_data.fix_valid ? "OK" : "BAD",
+                      phone_gps_data.fix_valid ? "OK" : "BAD");
+        controlMotors(0, 0); // Stop motors if invalid data
     }
+
+    bt_gps_data_ready = false;
     
     // Optional: Add a small delay to prevent CPU hogging
     HAL_Delay(10);
+    }
   }
   /* USER CODE END 3 */
 }
