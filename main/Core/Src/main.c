@@ -1181,6 +1181,67 @@ void parsePhoneGPSData(uint8_t* buffer, GPS_Data* gps) {
         gps->speed_knots, gps->course);
 }
 
+// helper: send a UBX‑CFG‑MSG over huart6
+static void send_ubx_cfg_msg(uint8_t msgClass, uint8_t msgID, uint8_t uartPortIndex, uint8_t rate)
+{
+    uint8_t frame[14];
+    uint8_t ckA = 0, ckB = 0;
+    // UBX header
+    frame[0] = 0xB5; frame[1] = 0x62;
+    // CFG‑MSG
+    frame[2] = 0x06; frame[3] = 0x01;
+    // payload length = 8
+    frame[4] = 0x08; frame[5] = 0x00;
+    // payload: class, id
+    frame[6] = msgClass;
+    frame[7] = msgID;
+    // six port‑rates: UART1, UART2, USB, SPI, DDC, reserved
+    // uartPortIndex says which of those to set to ‘rate’
+    for (int i = 0; i < 6; i++)
+        frame[8 + i] = (i == uartPortIndex) ? rate : 0;
+    // checksum over payload (bytes 6..13)
+    for (int i = 6; i <= 13; i++) {
+        ckA += frame[i];
+        ckB += ckA;
+    }
+    frame[14] = ckA;
+    frame[15] = ckB;
+    // send it
+    HAL_UART_Transmit(&huart6, frame, sizeof(frame), HAL_MAX_DELAY);
+}
+
+void init_gnss(void)
+{
+    // msgIDs of all standard NMEA sentences
+    const uint8_t nmea_ids[] = {
+        0x00, // GGA
+        0x01, // GLL
+        0x02, // GSA
+        0x03, // GSV
+        0x04, // RMC
+        0x05, // VTG
+        0x07, // GST
+        0x08, // ZDA
+        0x09, // GBS
+        0x0A, // DTM
+        0x0D, // GNS
+        0x0F  // VLW
+    };
+    const int uartPortIndex = 1;    // UART2 of the u‑blox (we have GNSS on huart6 → port index 1)
+    const uint8_t enableRate = 1;   // 1 Hz
+
+    // first, disable every sentence on that port
+    for (size_t i = 0; i < sizeof(nmea_ids); i++) {
+        send_ubx_cfg_msg(0xF0, nmea_ids[i], uartPortIndex, 0);
+        HAL_Delay(50);
+    }
+    // then re‑enable only GLL (0x01) and RMC (0x04)
+    send_ubx_cfg_msg(0xF0, 0x01, uartPortIndex, enableRate);
+    HAL_Delay(50);
+    send_ubx_cfg_msg(0xF0, 0x04, uartPortIndex, enableRate);
+    HAL_Delay(50);
+}
+
 /* USER CODE END 0 */
 
 /**
@@ -1223,10 +1284,7 @@ int main(void)
   /* USER CODE BEGIN 2 */
 
   init_imu();
-
-    //   resetBluetoothModule();
-    HAL_Delay(1000);
-    //   initBluetooth();
+  init_gnss();
 
   // Clear the Bluetooth GPS buffer before starting reception
   memset(bt_gps_buffer, 0, BT_GPS_DATA_SIZE);
@@ -1237,9 +1295,6 @@ int main(void)
   HAL_UARTEx_ReceiveToIdle_DMA(&huart6, uartRxBuffer, UART_RX_BUFFER_SIZE);
   __HAL_DMA_DISABLE_IT(huart6.hdmarx, DMA_IT_HT); // Disable Half Transfer interrupt
   printToConsole("DMA Initialized successfully\r\n");
-
-  // Test USART6 reception
-  // testUSART6Reception();
 
   // Start PWM channels
   HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
