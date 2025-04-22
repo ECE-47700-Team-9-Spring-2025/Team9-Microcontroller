@@ -1493,59 +1493,60 @@ int main(void)
         printToConsole("gps_data.fix_valid: %d\r\n", gps_data.fix_valid);
         printToConsole("phone_gps_data.fix_valid: %d\r\n", phone_gps_data.fix_valid);
 
- // ... existing code ...
-if (gps_data.fix_valid && phone_gps_data.fix_valid) {
-    gnss_vector = calculateGNSSVector(gps_data, phone_gps_data);
-    
-    // Get current bearing from IMU
-    float bearing = read_imu_data();
-    
-    // Calculate the difference between the two bearings
-    float difference = bearing - gnss_vector.bearing;
-    // Normalize the difference to -180 to 180 degrees
-    if (difference > 180) difference -= 360;
-    if (difference < -180) difference += 360;
-    
-    // Constants for control
-    const float BEARING_THRESHOLD = 15.0f;  // Degrees of acceptable alignment
-    const float MIN_DISTANCE = 1.0f;        // Minimum distance in meters
-    const int SPEED = 100;                  // Full speed for all movements
-    
-    // Print debug info
-    printToConsole("\nCurrent State:\n");
-    printToConsole("Distance: %.2f m\n", gnss_vector.distance);
-    printToConsole("Bearing difference: %.1f degrees\n", difference);
-    
-    // Decision logic
-    if (gnss_vector.distance < MIN_DISTANCE) {
-        // We've reached the target
-        printToConsole("Target reached - stopping\n");
-        controlMotors(0, 0);
-    }
-    else if (fabs(difference) > BEARING_THRESHOLD) {
-        // Need to turn - determine direction
-        if (difference > 0) {
-            // Turn left in place
-            printToConsole("Point turning left\n");
-            controlMotors(-SPEED, SPEED);
+        if (gps_data.fix_valid && phone_gps_data.fix_valid) {
+            gnss_vector = calculateGNSSVector(gps_data, phone_gps_data);
+            
+            // Get current bearing from IMU
+            float bearing = read_imu_data();
+            
+            // Calculate the difference between the two bearings
+            float difference = bearing - gnss_vector.bearing;
+
+            // Normalize the difference to -180 to 180 degrees
+            if (difference > 180) difference -= 360;
+            if (difference < -180) difference += 360;
+            
+            // Constants for control
+            const float BEARING_THRESHOLD = 5.0f;  // Degrees of acceptable alignment
+            const float MIN_DISTANCE = 1.0f;        // Minimum distance in meters
+            const int SPEED = 100;                  // Full speed for all movements
+            
+            // Print debug info
+            printToConsole("\nCurrent State:\n");
+            printToConsole("Distance: %.2f m\n", gnss_vector.distance);
+            printToConsole("Bearing difference: %.1f degrees\n", difference);
+            
+            // Decision logic
+            if (gnss_vector.distance < MIN_DISTANCE) {
+                // We've reached the target
+                printToConsole("Target reached - stopping\n");
+                controlMotors(0, 0);
+            }
+            else if (fabs(difference) > BEARING_THRESHOLD) {
+                // Need to turn - determine direction
+                if (difference > 0) {
+                    // Turn left in place
+                    printToConsole("Point turning left\n");
+                    controlMotors(-SPEED, SPEED);
+                } else {
+                    // Turn right in place
+                    printToConsole("Point turning right\n");
+                    controlMotors(SPEED, -SPEED);
+                }
+            }
+            else {
+                // We're aligned, move forward
+                printToConsole("Moving forward\n");
+                controlMotors(SPEED, SPEED);
+            }
         } else {
-            // Turn right in place
-            printToConsole("Point turning right\n");
-            controlMotors(SPEED, -SPEED);
+            // No valid GPS data
+            printToConsole("Missing valid GPS fixes: Device %s, Phone %s\n",
+                        gps_data.fix_valid ? "OK" : "BAD",
+                        phone_gps_data.fix_valid ? "OK" : "BAD");
+            controlMotors(0, 0);
         }
-    }
-    else {
-        // We're aligned, move forward
-        printToConsole("Moving forward\n");
-        controlMotors(SPEED, SPEED);
-    }
-} else {
-    // No valid GPS data
-    printToConsole("Missing valid GPS fixes: Device %s, Phone %s\n",
-                gps_data.fix_valid ? "OK" : "BAD",
-                phone_gps_data.fix_valid ? "OK" : "BAD");
-    controlMotors(0, 0);
-}
+
         // Update previous data
         memcpy(&previous_gps_data, &gps_data, sizeof(GPS_Data));
         memcpy(&previous_phone_gps_data, &phone_gps_data, sizeof(GPS_Data));
