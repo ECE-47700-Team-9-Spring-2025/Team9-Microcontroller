@@ -128,6 +128,8 @@ typedef enum {
 #define CMD_MODE_FOLLOW 0x06
 #define CMD_MODE_MANUAL 0x07
 
+
+
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -709,6 +711,56 @@ void ProcessGpsData() {
     // }
 }
 
+// Scale function: maps 0-100 to 50-100
+int scalePWM(int speed) {
+    if (speed == 0) return 0;  // Keep 0 as 0 for complete stop
+    int absSpeed = speed > 0 ? speed : -speed;
+    return 50 + (absSpeed * 50) / 100;  // Maps 0-100 to 50-100
+}
+
+
+// Set PWM duty cycle
+void PWM_SetDutyCycle(TIM_HandleTypeDef *htim, uint32_t Channel, uint16_t dutyCycle) {
+    uint16_t pulse = (__HAL_TIM_GET_AUTORELOAD(htim) * dutyCycle) / 100;
+    __HAL_TIM_SET_COMPARE(htim, Channel, pulse);
+}
+
+/**
+ * Control both motors with a single function
+ * @param leftSpeed: Speed for left motor (-100 to +100)
+ *                  Positive values = forward, Negative values = reverse
+ * @param rightSpeed: Speed for right motor (-100 to +100)
+ *                   Positive values = forward, Negative values = reverse
+ */
+void controlMotors(int leftSpeed, int rightSpeed) {
+    // Constrain speeds to valid range
+    leftSpeed = (leftSpeed > 100) ? 100 : leftSpeed;
+    leftSpeed = (leftSpeed < -100) ? -100 : leftSpeed;
+    rightSpeed = (rightSpeed > 100) ? 100 : rightSpeed;
+    rightSpeed = (rightSpeed < -100) ? -100 : rightSpeed;
+    
+    // Set left motor
+    if (leftSpeed >= 0) {
+        // Forward
+        PWM_SetDutyCycle(&MOTOR_LEFT_FWD_TIM, MOTOR_LEFT_FWD_CHANNEL, scalePWM(leftSpeed));
+        PWM_SetDutyCycle(&MOTOR_LEFT_REV_TIM, MOTOR_LEFT_REV_CHANNEL, 0);
+    } else {
+        // Reverse
+        PWM_SetDutyCycle(&MOTOR_LEFT_FWD_TIM, MOTOR_LEFT_FWD_CHANNEL, 0);
+        PWM_SetDutyCycle(&MOTOR_LEFT_REV_TIM, MOTOR_LEFT_REV_CHANNEL, scalePWM(-leftSpeed));
+    }
+    
+    // Set right motor
+    if (rightSpeed >= 0) {
+        // Forward
+        PWM_SetDutyCycle(&MOTOR_RIGHT_FWD_TIM, MOTOR_RIGHT_FWD_CHANNEL, scalePWM(rightSpeed));
+        PWM_SetDutyCycle(&MOTOR_RIGHT_REV_TIM, MOTOR_RIGHT_REV_CHANNEL, 0);
+    } else {
+        // Reverse
+        PWM_SetDutyCycle(&MOTOR_RIGHT_FWD_TIM, MOTOR_RIGHT_FWD_CHANNEL, 0);
+        PWM_SetDutyCycle(&MOTOR_RIGHT_REV_TIM, MOTOR_RIGHT_REV_CHANNEL, scalePWM(-rightSpeed));
+    }
+}
 
 
 void processManualCommand(uint8_t* buffer, uint16_t size)
@@ -726,54 +778,63 @@ void processManualCommand(uint8_t* buffer, uint16_t size)
     // Update last command time
     lastCommandTime = HAL_GetTick();
     
+    int16_t leftSpeed = 0;
+    int16_t rightSpeed = 0;
+    
     // Process the command
     switch(command) {
-        case CMD_FORWARD:
+        case CMD_RIGHT:
             printToConsole("Manual Command: FORWARD\r\n");
             currentMode = MODE_MANUAL;
-            // Forward command will be handled in main loop
-            break;
-            
-        case CMD_BACKWARD:
-            printToConsole("Manual Command: BACKWARD\r\n");
-            currentMode = MODE_MANUAL;
-            // Backward command will be handled in main loop
+            leftSpeed = 100;
+            rightSpeed = 100;
             break;
             
         case CMD_LEFT:
-            printToConsole("Manual Command: LEFT\r\n");
+            printToConsole("Manual Command: BACKWARD\r\n");
             currentMode = MODE_MANUAL;
-            // Left command will be handled in main loop
+            leftSpeed = -100;
+            rightSpeed = -100;
             break;
             
-        case CMD_RIGHT:
+        case CMD_BACKWARD:
+            printToConsole("Manual Command: LEFT\r\n");
+            currentMode = MODE_MANUAL;
+            leftSpeed = -100;
+            rightSpeed = 100;
+            break;
+            
+        case CMD_FORWARD:
             printToConsole("Manual Command: RIGHT\r\n");
             currentMode = MODE_MANUAL;
-            // Right command will be handled in main loop
+            leftSpeed = 100;
+            rightSpeed = -100;
             break;
             
         case CMD_STOP:
             printToConsole("Manual Command: STOP\r\n");
             currentMode = MODE_MANUAL;
-            // Stop command will be handled in main loop
+            leftSpeed = 0;
+            rightSpeed = 0;
             break;
             
         case CMD_MODE_FOLLOW:
             printToConsole("Switching to FOLLOW ME mode\r\n");
             currentMode = MODE_FOLLOW_ME;
-            // Mode switch will be handled in main loop
             break;
             
         case CMD_MODE_MANUAL:
             printToConsole("Switching to MANUAL mode\r\n");
             currentMode = MODE_MANUAL;
-            // Mode switch will be handled in main loop
             break;
             
         default:
             printToConsole("Unknown command: %02X\r\n", command);
             break;
     }
+    
+    // Execute motor command
+    controlMotors(leftSpeed, rightSpeed);
 }
 
 
@@ -887,55 +948,7 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
     }
 }
 
-// Set PWM duty cycle
-void PWM_SetDutyCycle(TIM_HandleTypeDef *htim, uint32_t Channel, uint16_t dutyCycle) {
-    uint16_t pulse = (__HAL_TIM_GET_AUTORELOAD(htim) * dutyCycle) / 100;
-    __HAL_TIM_SET_COMPARE(htim, Channel, pulse);
-}
 
-// Scale function: maps 0-100 to 50-100
-int scalePWM(int speed) {
-    if (speed == 0) return 0;  // Keep 0 as 0 for complete stop
-    int absSpeed = speed > 0 ? speed : -speed;
-    return 50 + (absSpeed * 50) / 100;  // Maps 0-100 to 50-100
-}
-
-/**
- * Control both motors with a single function
- * @param leftSpeed: Speed for left motor (-100 to +100)
- *                  Positive values = forward, Negative values = reverse
- * @param rightSpeed: Speed for right motor (-100 to +100)
- *                   Positive values = forward, Negative values = reverse
- */
-void controlMotors(int leftSpeed, int rightSpeed) {
-    // Constrain speeds to valid range
-    leftSpeed = (leftSpeed > 100) ? 100 : leftSpeed;
-    leftSpeed = (leftSpeed < -100) ? -100 : leftSpeed;
-    rightSpeed = (rightSpeed > 100) ? 100 : rightSpeed;
-    rightSpeed = (rightSpeed < -100) ? -100 : rightSpeed;
-    
-    // Set left motor
-    if (leftSpeed >= 0) {
-        // Forward
-        PWM_SetDutyCycle(&MOTOR_LEFT_FWD_TIM, MOTOR_LEFT_FWD_CHANNEL, scalePWM(leftSpeed));
-        PWM_SetDutyCycle(&MOTOR_LEFT_REV_TIM, MOTOR_LEFT_REV_CHANNEL, 0);
-    } else {
-        // Reverse
-        PWM_SetDutyCycle(&MOTOR_LEFT_FWD_TIM, MOTOR_LEFT_FWD_CHANNEL, 0);
-        PWM_SetDutyCycle(&MOTOR_LEFT_REV_TIM, MOTOR_LEFT_REV_CHANNEL, scalePWM(-leftSpeed));
-    }
-    
-    // Set right motor
-    if (rightSpeed >= 0) {
-        // Forward
-        PWM_SetDutyCycle(&MOTOR_RIGHT_FWD_TIM, MOTOR_RIGHT_FWD_CHANNEL, scalePWM(rightSpeed));
-        PWM_SetDutyCycle(&MOTOR_RIGHT_REV_TIM, MOTOR_RIGHT_REV_CHANNEL, 0);
-    } else {
-        // Reverse
-        PWM_SetDutyCycle(&MOTOR_RIGHT_FWD_TIM, MOTOR_RIGHT_FWD_CHANNEL, 0);
-        PWM_SetDutyCycle(&MOTOR_RIGHT_REV_TIM, MOTOR_RIGHT_REV_CHANNEL, scalePWM(-rightSpeed));
-    }
-}
 
 // imu libraries
 typedef struct {
@@ -1417,6 +1430,10 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+
+    if (currentMode == MODE_MANUAL) {
+        continue;
+    }
 
     // Print the bearing from the IMU for debugging
     if (DEBUG_IMU_DATA) {
