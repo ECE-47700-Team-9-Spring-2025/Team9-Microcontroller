@@ -196,6 +196,10 @@ static int16_t accel_history[ROLLING_AVG_SAMPLES][3] = {0};
 static int16_t mag_history[ROLLING_AVG_SAMPLES][3] = {0};
 static uint8_t history_index = 0;
 
+// For motor control
+int16_t currentLeftSpeed = 0;
+int16_t currentRightSpeed = 0;
+
 // Add this global variable to track when to process GPS data
 static uint32_t lastGpsProcessTime = 0;
 #define GPS_PROCESS_INTERVAL 1000 // Process GPS data every 1 second
@@ -721,8 +725,30 @@ int scalePWM(int speed) {
 
 // Set PWM duty cycle
 void PWM_SetDutyCycle(TIM_HandleTypeDef *htim, uint32_t Channel, uint16_t dutyCycle) {
-    uint16_t pulse = (__HAL_TIM_GET_AUTORELOAD(htim) * dutyCycle) / 100;
+    // uint16_t pulse = (__HAL_TIM_GET_AUTORELOAD(htim) * dutyCycle) / 100;
+    uint16_t pulse = (255 * dutyCycle) / 100;
     __HAL_TIM_SET_COMPARE(htim, Channel, pulse);
+}
+
+void controlLeftMotor(int16_t speed) {
+    if (speed >= 0) {
+        PWM_SetDutyCycle(&MOTOR_LEFT_FWD_TIM, MOTOR_LEFT_FWD_CHANNEL, scalePWM(speed));
+        PWM_SetDutyCycle(&MOTOR_LEFT_REV_TIM, MOTOR_LEFT_REV_CHANNEL, 0);
+    } else {
+        PWM_SetDutyCycle(&MOTOR_LEFT_FWD_TIM, MOTOR_LEFT_FWD_CHANNEL, 0);
+        PWM_SetDutyCycle(&MOTOR_LEFT_REV_TIM, MOTOR_LEFT_REV_CHANNEL, scalePWM(-speed));
+    }
+}
+
+void controlRightMotor(int16_t speed) {
+    speed = -speed;
+    if (speed >= 0) {
+        PWM_SetDutyCycle(&MOTOR_RIGHT_FWD_TIM, MOTOR_RIGHT_FWD_CHANNEL, scalePWM(speed));
+        PWM_SetDutyCycle(&MOTOR_RIGHT_REV_TIM, MOTOR_RIGHT_REV_CHANNEL, 0);
+    } else {
+        PWM_SetDutyCycle(&MOTOR_RIGHT_FWD_TIM, MOTOR_RIGHT_FWD_CHANNEL, 0);
+        PWM_SetDutyCycle(&MOTOR_RIGHT_REV_TIM, MOTOR_RIGHT_REV_CHANNEL, scalePWM(-speed));
+    }
 }
 
 /**
@@ -740,25 +766,15 @@ void controlMotors(int leftSpeed, int rightSpeed) {
     rightSpeed = (rightSpeed < -100) ? -100 : rightSpeed;
     
     // Set left motor
-    if (leftSpeed >= 0) {
-        // Forward
-        PWM_SetDutyCycle(&MOTOR_LEFT_FWD_TIM, MOTOR_LEFT_FWD_CHANNEL, scalePWM(leftSpeed));
-        PWM_SetDutyCycle(&MOTOR_LEFT_REV_TIM, MOTOR_LEFT_REV_CHANNEL, 0);
-    } else {
-        // Reverse
-        PWM_SetDutyCycle(&MOTOR_LEFT_FWD_TIM, MOTOR_LEFT_FWD_CHANNEL, 0);
-        PWM_SetDutyCycle(&MOTOR_LEFT_REV_TIM, MOTOR_LEFT_REV_CHANNEL, scalePWM(-leftSpeed));
+    if (leftSpeed != currentLeftSpeed) {
+        controlLeftMotor(leftSpeed);
+        currentLeftSpeed = leftSpeed;
     }
     
     // Set right motor
-    if (rightSpeed >= 0) {
-        // Forward
-        PWM_SetDutyCycle(&MOTOR_RIGHT_FWD_TIM, MOTOR_RIGHT_FWD_CHANNEL, scalePWM(rightSpeed));
-        PWM_SetDutyCycle(&MOTOR_RIGHT_REV_TIM, MOTOR_RIGHT_REV_CHANNEL, 0);
-    } else {
-        // Reverse
-        PWM_SetDutyCycle(&MOTOR_RIGHT_FWD_TIM, MOTOR_RIGHT_FWD_CHANNEL, 0);
-        PWM_SetDutyCycle(&MOTOR_RIGHT_REV_TIM, MOTOR_RIGHT_REV_CHANNEL, scalePWM(-rightSpeed));
+    if (rightSpeed != currentRightSpeed) {
+        controlRightMotor(rightSpeed);
+        currentRightSpeed = rightSpeed;
     }
 }
 
@@ -1353,7 +1369,7 @@ void parsePhoneGPSData(uint8_t* buffer, GPS_Data* gps) {
 int main(void)
 {
 
-  /* USER CODE BEGIN 1 */
+  /* USER CODE BEGIN 1 */  
   printToConsole("Starting Program!\r\n");
   /* USER CODE END 1 */
 
@@ -1431,6 +1447,16 @@ int main(void)
 
     /* USER CODE BEGIN 3 */
 
+    controlMotors(100, 100);
+    HAL_Delay(10000);
+    controlMotors(0, 0);
+    HAL_Delay(5000);
+    controlMotors(-100, -100);
+    HAL_Delay(10000);
+    controlMotors(0, 0);
+    HAL_Delay(5000);
+    continue;
+
     if (currentMode == MODE_MANUAL) {
         continue;
     }
@@ -1466,8 +1492,9 @@ int main(void)
         printToConsole("\r\nNew data received!\r\n");
         printToConsole("gps_data.fix_valid: %d\r\n", gps_data.fix_valid);
         printToConsole("phone_gps_data.fix_valid: %d\r\n", phone_gps_data.fix_valid);
+
         // Calculate vector between GPS positions only if data has changed
-        if (new_data_received && gps_data.fix_valid && phone_gps_data.fix_valid) {
+        if (gps_data.fix_valid && phone_gps_data.fix_valid) {
             gnss_vector = calculateGNSSVector(gps_data, phone_gps_data);
             printToConsole("Recalculated GNSS vector\r\n");
             
@@ -1569,16 +1596,17 @@ int main(void)
             printToConsole("Motor speeds: Left=%d, Right=%d (Distance: %.2fm, Turn: %.2f, Angle: %.1f)\r\n", 
                         leftSpeed, rightSpeed, gnss_vector.distance, turnIntensity, absDifference);
             controlMotors(leftSpeed, rightSpeed);
-
-            // Update previous data
-            memcpy(&previous_gps_data, &gps_data, sizeof(GPS_Data));
-            memcpy(&previous_phone_gps_data, &phone_gps_data, sizeof(GPS_Data));
         } else {
             printToConsole("Missing valid GPS fixes: Device %s, Phone %s\r\n",
                         gps_data.fix_valid ? "OK" : "BAD",
                         phone_gps_data.fix_valid ? "OK" : "BAD");
             controlMotors(0, 0); // Stop motors if invalid data
         }
+
+        // Update previous data
+        memcpy(&previous_gps_data, &gps_data, sizeof(GPS_Data));
+        memcpy(&previous_phone_gps_data, &phone_gps_data, sizeof(GPS_Data));
+        new_data_received = false;
     }
   }
   /* USER CODE END 3 */
