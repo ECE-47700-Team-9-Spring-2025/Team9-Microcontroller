@@ -113,6 +113,21 @@ int16_t mag_data[3];
 #define MOTOR_RIGHT_REV_TIM      htim3
 #define MOTOR_RIGHT_REV_CHANNEL  TIM_CHANNEL_2
 
+// Mode definitions
+typedef enum {
+    MODE_FOLLOW_ME,
+    MODE_MANUAL
+} OperationMode;
+
+// Command definitions
+#define CMD_FORWARD     0x01
+#define CMD_BACKWARD    0x02
+#define CMD_LEFT        0x03
+#define CMD_RIGHT       0x04
+#define CMD_STOP        0x05
+#define CMD_MODE_FOLLOW 0x06
+#define CMD_MODE_MANUAL 0x07
+
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -166,6 +181,12 @@ volatile uint16_t searchPos = 0;
 #define BT_GPS_DATA_SIZE 26
 uint8_t bt_gps_buffer[BT_GPS_DATA_SIZE];
 volatile bool bt_gps_data_ready = false;
+
+OperationMode currentMode = MODE_FOLLOW_ME;  // Default to follow me mode
+uint32_t lastCommandTime = 0;
+
+#define RX_BUFFER_SIZE 128
+uint8_t rxBuffer[RX_BUFFER_SIZE];
 
 // Add these global variables for rolling average
 #define ROLLING_AVG_SAMPLES 3
@@ -688,7 +709,128 @@ void ProcessGpsData() {
     // }
 }
 
+
+
+void processManualCommand(uint8_t* buffer, uint16_t size)
+{
+    // Extract command byte
+    uint8_t command = buffer[1];
+    
+    // Validate checksum
+    uint8_t checksum = buffer[0] ^ buffer[1];
+    if (checksum != buffer[2]) {
+        printToConsole("Manual command checksum error: %02X vs %02X\r\n", checksum, buffer[2]);
+        return;
+    }
+    
+    // Update last command time
+    lastCommandTime = HAL_GetTick();
+    
+    // Process the command
+    switch(command) {
+        case CMD_FORWARD:
+            printToConsole("Manual Command: FORWARD\r\n");
+            currentMode = MODE_MANUAL;
+            // Forward command will be handled in main loop
+            break;
+            
+        case CMD_BACKWARD:
+            printToConsole("Manual Command: BACKWARD\r\n");
+            currentMode = MODE_MANUAL;
+            // Backward command will be handled in main loop
+            break;
+            
+        case CMD_LEFT:
+            printToConsole("Manual Command: LEFT\r\n");
+            currentMode = MODE_MANUAL;
+            // Left command will be handled in main loop
+            break;
+            
+        case CMD_RIGHT:
+            printToConsole("Manual Command: RIGHT\r\n");
+            currentMode = MODE_MANUAL;
+            // Right command will be handled in main loop
+            break;
+            
+        case CMD_STOP:
+            printToConsole("Manual Command: STOP\r\n");
+            currentMode = MODE_MANUAL;
+            // Stop command will be handled in main loop
+            break;
+            
+        case CMD_MODE_FOLLOW:
+            printToConsole("Switching to FOLLOW ME mode\r\n");
+            currentMode = MODE_FOLLOW_ME;
+            // Mode switch will be handled in main loop
+            break;
+            
+        case CMD_MODE_MANUAL:
+            printToConsole("Switching to MANUAL mode\r\n");
+            currentMode = MODE_MANUAL;
+            // Mode switch will be handled in main loop
+            break;
+            
+        default:
+            printToConsole("Unknown command: %02X\r\n", command);
+            break;
+    }
+}
+
+
 void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
+
+    if (huart->Instance == USART1)
+    {
+        // We have received data of length 'Size'
+        if (Size >= 1)
+        {
+            // Check message type (first byte)
+            uint8_t msgType = rxBuffer[0];
+
+            printToConsole("Received message type: %02X\r\n", msgType);
+            
+            // Verify we have a valid message with sufficient bytes
+            bool validMessage = false;
+
+            printToConsole("Received message size: %d\r\n", Size);
+            
+            if (msgType == 0x01) {      // GPS data (26 bytes)
+                // Process GPS data - store previous data before updating
+                memcpy(&previous_phone_gps_data, &phone_gps_data, sizeof(GPS_Data));
+                
+                // Only parse if we received full data
+                if (Size == 26) {
+                    // Debug print the raw bytes
+                    printToConsole("GPS data bytes: ");
+                    for (int i = 0; i < Size && i < 26; i++) {
+                        printToConsole("%02X ", rxBuffer[i]);
+                    }
+                    printToConsole("\r\n");
+                    // Parse phone GPS data - make sure to skip the message type
+                    parsePhoneGPSData(rxBuffer+1, &phone_gps_data);
+                    
+                    printToConsole("Parsed phone GPS: fix=%s lat=%.6f%c lon=%.6f%c\r\n", 
+                        phone_gps_data.fix_valid ? "VALID" : "INVALID",
+                        phone_gps_data.latitude, phone_gps_data.lat_direction,
+                        phone_gps_data.longitude, phone_gps_data.lon_direction);
+                    
+                    validMessage = true;
+                } else {
+                    printToConsole("Incomplete GPS data - expected 26 bytes, got %d\r\n", Size);
+                }
+            }
+            else if (msgType == 0x02 && Size >= 3) {  // Manual control (3 bytes)
+                // Process manual control command
+                processManualCommand(rxBuffer, Size);
+                validMessage = true;
+            }
+        }
+        
+        // Restart DMA reception for next message
+        HAL_UARTEx_ReceiveToIdle_DMA(huart, rxBuffer, RX_BUFFER_SIZE);
+        __HAL_DMA_DISABLE_IT(huart->hdmarx, DMA_IT_HT);
+    }
+    
     if (huart->Instance == USART6) {
         // Calculate the new head position
         uint16_t newHead = (rxHead + Size) % UART_RX_BUFFER_SIZE;
@@ -735,6 +877,8 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
             // Original behavior for other data
             printToConsole("\r\nReceived (callback): %s", rx_buf);
         }
+
+        HAL_Delay(1000);
         
         // Restart the reception for GPS data
         memset(bt_gps_buffer, 0, BT_GPS_DATA_SIZE);
@@ -1135,11 +1279,17 @@ float bytesToFloat(uint8_t* bytes) {
  */
 void parsePhoneGPSData(uint8_t* buffer, GPS_Data* gps) {
     // Validate checksum first
-    uint8_t checksum = 0;
-    for(int i = 0; i < 25; i++) checksum ^= buffer[i];
+    printToConsole("Parsing Phone GPS Data\r\n");
+    printToConsole("Buffer: ");
+    for(int i = 0; i < 25; i++) {
+        printToConsole("%02X ", buffer[i]);
+    }
+    printToConsole("\r\n");
+    uint8_t checksum = 0x01;
+    for(int i = 0; i < 24; i++) checksum ^= buffer[i];
     
-    if(checksum != buffer[25]) {
-        printToConsole("Checksum failed: %02X vs %02X\r\n", checksum, buffer[25]);
+    if(checksum != buffer[24]) {
+        printToConsole("Checksum failed: %02X vs %02X\r\n", checksum, buffer[24]);
         gps->fix_valid = false;
         return;
     }
@@ -1229,8 +1379,13 @@ int main(void)
     //   initBluetooth();
 
   // Clear the Bluetooth GPS buffer before starting reception
-  memset(bt_gps_buffer, 0, BT_GPS_DATA_SIZE);
-  HAL_UART_Receive_DMA(&huart1, bt_gps_buffer, BT_GPS_DATA_SIZE);
+//   memset(bt_gps_buffer, 0, BT_GPS_DATA_SIZE);
+//   HAL_UART_Receive_DMA(&huart1, bt_gps_buffer, BT_GPS_DATA_SIZE);
+  memset(rxBuffer, 0, RX_BUFFER_SIZE);
+
+  HAL_UARTEx_ReceiveToIdle_DMA(&huart1, rxBuffer, RX_BUFFER_SIZE);
+  __HAL_DMA_DISABLE_IT(huart1.hdmarx, DMA_IT_HT);
+
   printToConsole("Bluetooth GPS reception initialized!\r\n");
 
   // Initialize DMA for UART6 reception
