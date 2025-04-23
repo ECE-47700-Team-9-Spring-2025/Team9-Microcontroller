@@ -792,28 +792,28 @@ void processManualCommand(uint8_t* buffer, uint16_t size)
     // Process the command
     switch(command) {
         case CMD_RIGHT:
-            printToConsole("Manual Command: FORWARD\r\n");
+            printToConsole("Manual Command: RIGHT\r\n");
             currentMode = MODE_MANUAL;
             leftSpeed = 100;
             rightSpeed = 100;
             break;
             
         case CMD_LEFT:
-            printToConsole("Manual Command: BACKWARD\r\n");
+            printToConsole("Manual Command: LEFT\r\n");
             currentMode = MODE_MANUAL;
             leftSpeed = -100;
             rightSpeed = -100;
             break;
             
         case CMD_BACKWARD:
-            printToConsole("Manual Command: LEFT\r\n");
+            printToConsole("Manual Command: BACKWARD\r\n");
             currentMode = MODE_MANUAL;
             leftSpeed = -100;
             rightSpeed = 100;
             break;
             
         case CMD_FORWARD:
-            printToConsole("Manual Command: RIGHT\r\n");
+            printToConsole("Manual Command: FORWARD\r\n");
             currentMode = MODE_MANUAL;
             leftSpeed = 100;
             rightSpeed = -100;
@@ -1503,17 +1503,17 @@ int main(void)
                 if (difference > 0) {
                     // Turn left in place
                     printToConsole("Point turning left\n");
-                    controlMotors(-SPEED, SPEED);
+                    controlMotors(-SPEED, -SPEED);
                 } else {
                     // Turn right in place
                     printToConsole("Point turning right\n");
-                    controlMotors(SPEED, -SPEED);
+                    controlMotors(SPEED, SPEED);
                 }
             }
             else {
                 // We're aligned, move forward
                 printToConsole("Moving forward\n");
-                controlMotors(SPEED, SPEED);
+                controlMotors(SPEED, -SPEED);
             }
         } else {
             // No valid GPS data
