@@ -1464,118 +1464,68 @@ int main(void)
         printToConsole("Phone GPS data changed\r\n");
     }
     
-    if (new_data_received) {
+        if (new_data_received) {
         printToConsole("\r\nNew data received!\r\n");
         printToConsole("gps_data.fix_valid: %d\r\n", gps_data.fix_valid);
         printToConsole("phone_gps_data.fix_valid: %d\r\n", phone_gps_data.fix_valid);
-        // Calculate vector between GPS positions only if data has changed
-        if (new_data_received && gps_data.fix_valid && phone_gps_data.fix_valid) {
+
+        if (gps_data.fix_valid && phone_gps_data.fix_valid) {
             gnss_vector = calculateGNSSVector(gps_data, phone_gps_data);
-            printToConsole("Recalculated GNSS vector\r\n");
-            
-            // Display vector information
-            printToConsole("Distance between points: %.2f meters\r\n", gnss_vector.distance);
-            printToConsole("Bearing between points: %.1f degrees\r\n", gnss_vector.bearing);
             
             // Get current bearing from IMU
             float bearing = read_imu_data();
-            printToConsole("Current Bearing: %.1f degrees\r\n", bearing);
             
             // Calculate the difference between the two bearings
             float difference = bearing - gnss_vector.bearing;
+
             // Normalize the difference to -180 to 180 degrees
             if (difference > 180) difference -= 360;
             if (difference < -180) difference += 360;
             
-            printToConsole("Difference between bearings: %.1f degrees\r\n", difference);
+            // Constants for control
+            const float BEARING_THRESHOLD = 5.0f;  // Degrees of acceptable alignment
+            const float MIN_DISTANCE = 0.1f;        // Minimum distance in meters
+            const int SPEED = 100;                  // Full speed for all movements
             
-            printToConsole("Robot Should Turn %s by %.1f degrees\r\n", 
-                difference > 0 ? "left" : "right", fabs(difference));
-
-            const int MAX_SPEED = 100;
-            const int MIN_SPEED = 20;
-            const float MAX_DISTANCE = 10.0f;  // meters
-            const float MIN_DISTANCE = 1.0f;   // meters
-            const float MAX_ANGLE_DIFF = 90.0f;
-            const float MIN_ANGLE_DIFF = 2.0f;
+            // Print debug info
+            printToConsole("\nCurrent State:\n");
+            printToConsole("Distance: %.2f m\n", gnss_vector.distance);
+            printToConsole("Bearing difference: %.1f degrees\n", difference);
             
-            // Calculate base forward speed based on distance
-            float distanceSpeed = 0;
-            if (gnss_vector.distance > MAX_DISTANCE) {
-                distanceSpeed = MAX_SPEED;
-            } else if (gnss_vector.distance < MIN_DISTANCE) {
-                distanceSpeed = MIN_SPEED;
-            } else {
-                // More aggressive speed curve using square root for better low-speed control
-                float normalizedDistance = (gnss_vector.distance - MIN_DISTANCE) / (MAX_DISTANCE - MIN_DISTANCE);
-                distanceSpeed = MIN_SPEED + (MAX_SPEED - MIN_SPEED) * sqrtf(normalizedDistance);
+            // Decision logic
+            if (gnss_vector.distance < MIN_DISTANCE) {
+                // We've reached the target
+                printToConsole("Target reached - stopping\n");
+                controlMotors(0, 0);
             }
-            
-            // Calculate turn intensity based on bearing difference
-            float turnIntensity = 0;
-            float absDifference = fabs(difference);
-            if (absDifference < MIN_ANGLE_DIFF) {
-                // Almost aligned, very minimal turning
-                turnIntensity = 0.05f;  // Reduced from 0.1f for straighter forward motion
-            } else if (absDifference > MAX_ANGLE_DIFF) {
-                // Maximum turning - make it more aggressive
-                turnIntensity = 1.0f;
-            } else {
-                // More aggressive turn response curve
-                turnIntensity = 0.05f + 0.95f * powf((absDifference - MIN_ANGLE_DIFF) / 
-                                                  (MAX_ANGLE_DIFF - MIN_ANGLE_DIFF), 0.7f);
-            }
-            
-            // Calculate left and right motor speeds
-            int leftSpeed = 0;
-            int rightSpeed = 0;
-            
-            if (absDifference < MIN_ANGLE_DIFF) {
-                // Almost aligned, go straight at full calculated speed
-                leftSpeed = rightSpeed = (int)distanceSpeed;
-            } else {
-                // Need to turn
-                float turnReduction = turnIntensity * 0.8f;  // Reduce turn intensity effect
-                
-                if (absDifference > 45.0f) {  // If angle difference is large, do a point turn
-                    int turnSpeed = (int)(MAX_SPEED * 0.7f);  // Use 70% of max speed for turning
-                    if (difference > 0) {
-                        // Turn left in place
-                        leftSpeed = -turnSpeed;
-                        rightSpeed = turnSpeed;
-                    } else {
-                        // Turn right in place
-                        leftSpeed = turnSpeed;
-                        rightSpeed = -turnSpeed;
-                    }
+            else if (fabs(difference) > BEARING_THRESHOLD) {
+                // Need to turn - determine direction
+                if (difference > 0) {
+                    // Turn left in place
+                    printToConsole("Point turning left\n");
+                    controlMotors(-SPEED, SPEED);
                 } else {
-                    // Normal turning behavior with forward motion
-                    if (difference > 0) {
-                        // Turn left while moving forward
-                        rightSpeed = (int)distanceSpeed;
-                        leftSpeed = (int)(distanceSpeed * (1.0f - turnReduction));
-                    } else {
-                        // Turn right while moving forward
-                        leftSpeed = (int)distanceSpeed;
-                        rightSpeed = (int)(distanceSpeed * (1.0f - turnReduction));
-                    }
-                    
-                    // Ensure minimum forward motion for small turns
-                    int minTurnSpeed = (int)(distanceSpeed * 0.3f);
-                    leftSpeed = fmax(leftSpeed, minTurnSpeed);
-                    rightSpeed = fmax(rightSpeed, minTurnSpeed);
+                    // Turn right in place
+                    printToConsole("Point turning right\n");
+                    controlMotors(SPEED, -SPEED);
                 }
             }
-            
-            // Apply motor speeds
-            printToConsole("Motor speeds: Left=%d, Right=%d (Distance: %.2fm, Turn: %.2f, Angle: %.1f)\r\n", 
-                        leftSpeed, rightSpeed, gnss_vector.distance, turnIntensity, absDifference);
-            controlMotors(leftSpeed, rightSpeed);
+            else {
+                // We're aligned, move forward
+                printToConsole("Moving forward\n");
+                controlMotors(SPEED, SPEED);
+            }
+        } else {
+            // No valid GPS data
+            printToConsole("Missing valid GPS fixes: Device %s, Phone %s\n",
+                        gps_data.fix_valid ? "OK" : "BAD",
+                        phone_gps_data.fix_valid ? "OK" : "BAD");
+        }
 
-            // Update previous data
-            memcpy(&previous_gps_data, &gps_data, sizeof(GPS_Data));
-            memcpy(&previous_phone_gps_data, &phone_gps_data, sizeof(GPS_Data));
-        } 
+        // Update previous data
+        memcpy(&previous_gps_data, &gps_data, sizeof(GPS_Data));
+        memcpy(&previous_phone_gps_data, &phone_gps_data, sizeof(GPS_Data));
+        new_data_received = false;
     }
   }
   /* USER CODE END 3 */
