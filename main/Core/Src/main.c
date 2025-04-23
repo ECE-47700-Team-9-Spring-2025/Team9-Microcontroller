@@ -173,6 +173,9 @@ GPS_Data previous_gps_data;       // Add this to store previous GPS data
 GPS_Data previous_phone_gps_data; // Add this to store previous phone GPS data
 GNSSVector gnss_vector;           // Store the calculated vector
 
+static uint8_t phone_gps_buffer[26];
+static uint16_t phone_gps_bytes_received = 0;
+
 // DMA buffer for UART reception
 #define UART_RX_BUFFER_SIZE 512
 uint8_t uartRxBuffer[UART_RX_BUFFER_SIZE];
@@ -183,6 +186,7 @@ volatile uint16_t searchPos = 0;
 #define BT_GPS_DATA_SIZE 26
 uint8_t bt_gps_buffer[BT_GPS_DATA_SIZE];
 volatile bool bt_gps_data_ready = false;
+
 
 OperationMode currentMode = MODE_FOLLOW_ME;  // Default to follow me mode
 uint32_t lastCommandTime = 0;
@@ -195,6 +199,9 @@ uint8_t rxBuffer[RX_BUFFER_SIZE];
 static int16_t accel_history[ROLLING_AVG_SAMPLES][3] = {0};
 static int16_t mag_history[ROLLING_AVG_SAMPLES][3] = {0};
 static uint8_t history_index = 0;
+
+static uint8_t phone_data_buffer[26];
+static uint8_t phone_data_received = 0;
 
 // Add this global variable to track when to process GPS data
 static uint32_t lastGpsProcessTime = 0;
@@ -212,6 +219,7 @@ static void MX_SPI2_Init(void);
 static void MX_TIM2_Init(void);
 static void MX_TIM3_Init(void);
 static void MX_SPI5_Init(void);
+
 /* USER CODE BEGIN PFP */
 float bytesToFloat(uint8_t* bytes);
 void parsePhoneGPSData(uint8_t* buffer, GPS_Data* gps);
@@ -837,47 +845,42 @@ void processManualCommand(uint8_t* buffer, uint16_t size)
     controlMotors(leftSpeed, rightSpeed);
 }
 
-
 void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
 
     if (huart->Instance == USART1)
     {
         // We have received data of length 'Size'
-        if (Size >= 1)
-        {
-            // Check message type (first byte)
+        if (Size >= 1) {
             uint8_t msgType = rxBuffer[0];
-
-            printToConsole("Received message type: %02X\r\n", msgType);
-            
-            // Verify we have a valid message with sufficient bytes
+            printToConsole("Received msgType=0x%02X, Size=%d\r\n", msgType, Size);
             bool validMessage = false;
 
-            printToConsole("Received message size: %d\r\n", Size);
-            
-            if (msgType == 0x01) {      // GPS data (26 bytes)
-                // Process GPS data - store previous data before updating
-                memcpy(&previous_phone_gps_data, &phone_gps_data, sizeof(GPS_Data));
-                
-                // Only parse if we received full data
-                if (Size == 26) {
-                    // Debug print the raw bytes
-                    printToConsole("GPS data bytes: ");
-                    for (int i = 0; i < Size && i < 26; i++) {
-                        printToConsole("%02X ", rxBuffer[i]);
-                    }
-                    printToConsole("\r\n");
-                    // Parse phone GPS data - make sure to skip the message type
-                    parsePhoneGPSData(rxBuffer+1, &phone_gps_data);
-                    
-                    printToConsole("Parsed phone GPS: fix=%s lat=%.6f%c lon=%.6f%c\r\n", 
-                        phone_gps_data.fix_valid ? "VALID" : "INVALID",
-                        phone_gps_data.latitude, phone_gps_data.lat_direction,
-                        phone_gps_data.longitude, phone_gps_data.lon_direction);
-                    
+            if (msgType == 0x01) { // GPS data (split into two 13‑byte chunks or a full 26‑byte packet)
+                if (Size == 13) {
+                    uint16_t offset = (phone_data_received == 0) ? 0 : 13;
+                    memcpy(phone_data_buffer + offset, rxBuffer, 13);
+                    phone_data_received += 13;
+                    printToConsole("GPS chunk received: %d bytes, total=%d\r\n", Size, phone_data_received);
+                }
+                else if (Size == 26) {
+                    memcpy(phone_data_buffer, rxBuffer, 26);
+                    phone_data_received = 26;
+                    printToConsole("Full GPS packet received: 26 bytes\r\n");
+                }
+                else {
+                    printToConsole("Unexpected GPS chunk size: %d\r\n", Size);
+                }
+
+                if (phone_data_received == 26) {
+                    memcpy(&previous_phone_gps_data, &phone_gps_data, sizeof(GPS_Data));
+                    printToConsole("Assembled full GPS buffer, parsing...\r\n");
+                    parsePhoneGPSData(phone_data_buffer + 1, &phone_gps_data);
+                    printToConsole("Parsed phone GPS: fix=%s lat=%.6f%c lon=%.6f%c\r\n",
+                                   phone_gps_data.fix_valid ? "VALID" : "INVALID",
+                                   phone_gps_data.latitude,  phone_gps_data.lat_direction,
+                                   phone_gps_data.longitude, phone_gps_data.lon_direction);
+                    phone_data_received = 0;
                     validMessage = true;
-                } else {
-                    printToConsole("Incomplete GPS data - expected 26 bytes, got %d\r\n", Size);
                 }
             }
             else if (msgType == 0x02 && Size >= 3) {  // Manual control (3 bytes)
@@ -891,7 +894,6 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
         HAL_UARTEx_ReceiveToIdle_DMA(huart, rxBuffer, RX_BUFFER_SIZE);
         __HAL_DMA_DISABLE_IT(huart->hdmarx, DMA_IT_HT);
     }
-    
     if (huart->Instance == USART6) {
         // Calculate the new head position
         uint16_t newHead = (rxHead + Size) % UART_RX_BUFFER_SIZE;
@@ -918,35 +920,35 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
     }
 }
 
-void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
-{
-    if (huart->Instance == USART1) {
-        // Check if we have received GPS data from the app (26 bytes)
-        if (huart->RxXferSize == BT_GPS_DATA_SIZE) {
-            // Store previous phone GPS data before updating
-            memcpy(&previous_phone_gps_data, &phone_gps_data, sizeof(GPS_Data));
+// void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
+// {
+//     if (huart->Instance == USART1) {
+//         // Check if we have received GPS data from the app (26 bytes)
+//         if (huart->RxXferSize == BT_GPS_DATA_SIZE) {
+//             // Store previous phone GPS data before updating
+//             memcpy(&previous_phone_gps_data, &phone_gps_data, sizeof(GPS_Data));
             
-            // Process the received GPS data
-            parsePhoneGPSData(bt_gps_buffer, &phone_gps_data);
+//             // Process the received GPS data
+//             parsePhoneGPSData(bt_gps_buffer, &phone_gps_data);
 
-            printToConsole("\r\nBluetooth GPS data: fix=%s lat=%.6f%c lon=%.6f%c\r\n", 
-                phone_gps_data.fix_valid ? "VALID" : "INVALID",
-                phone_gps_data.latitude, phone_gps_data.lat_direction,
-                phone_gps_data.longitude, phone_gps_data.lon_direction);
+//             printToConsole("\r\nBluetooth GPS data: fix=%s lat=%.6f%c lon=%.6f%c\r\n", 
+//                 phone_gps_data.fix_valid ? "VALID" : "INVALID",
+//                 phone_gps_data.latitude, phone_gps_data.lat_direction,
+//                 phone_gps_data.longitude, phone_gps_data.lon_direction);
             
-        } else {
-            // Original behavior for other data
-            printToConsole("\r\nReceived (callback): %s", rx_buf);
-        }
+//         } else {
+//             // Original behavior for other data
+//             printToConsole("\r\nReceived (callback): %s", rx_buf);
+//         }
 
-        HAL_Delay(1000);
+//         HAL_Delay(1000);
         
-        // Restart the reception for GPS data
-        memset(bt_gps_buffer, 0, BT_GPS_DATA_SIZE);
+//         // Restart the reception for GPS data
+//         memset(bt_gps_buffer, 0, BT_GPS_DATA_SIZE);
 
-        HAL_UART_Receive_DMA(&huart1, bt_gps_buffer, BT_GPS_DATA_SIZE);
-    }
-}
+//         HAL_UART_Receive_DMA(&huart1, bt_gps_buffer, BT_GPS_DATA_SIZE);
+//     }
+// }
 
 
 
@@ -1573,12 +1575,7 @@ int main(void)
             // Update previous data
             memcpy(&previous_gps_data, &gps_data, sizeof(GPS_Data));
             memcpy(&previous_phone_gps_data, &phone_gps_data, sizeof(GPS_Data));
-        } else {
-            printToConsole("Missing valid GPS fixes: Device %s, Phone %s\r\n",
-                        gps_data.fix_valid ? "OK" : "BAD",
-                        phone_gps_data.fix_valid ? "OK" : "BAD");
-            controlMotors(0, 0); // Stop motors if invalid data
-        }
+        } 
     }
   }
   /* USER CODE END 3 */
